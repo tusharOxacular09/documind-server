@@ -1,0 +1,2 @@
+# documind-server
+documind-server
