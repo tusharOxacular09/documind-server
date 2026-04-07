@@ -15,6 +15,7 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 | Data | **MongoDB** via **Mongoose** |
 | Auth | **JWT** (access + refresh), **bcrypt** password hashing |
 | Ingestion | **pdf-parse**, **mammoth** (DOCX), **JSZip** + slide XML (PPTX); in-process **worker queue** with retries |
+| AI | Optional OpenAI embeddings + grounded generation with safe fallback |
 
 ---
 
@@ -36,7 +37,7 @@ uploads/                 # Per-user file storage: uploads/<userId>/...
 ```
 
 - **Isolation:** Every query scopes by `userId` from the verified access token.
-- **RAG (current):** Lexical overlap ranking over stored chunks; structured so embeddings/vector search can replace `retrieveRankedCitations` later.
+- **RAG (current):** Hybrid retrieval (lexical + optional embedding similarity). If `OPENAI_API_KEY` is not set, it automatically falls back to lexical-only ranking and template responses.
 
 ---
 
@@ -66,6 +67,9 @@ MONGODB_DB_NAME=documind
 JWT_SECRET=change-me-to-a-long-random-string
 ACCESS_TOKEN_EXPIRY=15m
 REFRESH_TOKEN_EXPIRY=7d
+OPENAI_API_KEY=
+OPENAI_CHAT_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 Production: restrict **`cors()`** in `src/app.ts` to your Next.js origin instead of open CORS if you expose this API publicly.
@@ -115,7 +119,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 ## Document lifecycle
 
 1. **Upload** — File saved under `uploads/<userId>/`, row `status: uploaded`.
-2. **Worker** — Job dequeued → `processing` → extract text → chunk → replace `DocumentChunk` rows → `ready` or `failed` (with retries).
+2. **Worker** — Job dequeued → `processing` → extract text → chunk → optional per-chunk embeddings (if OpenAI key exists) → replace `DocumentChunk` rows → `ready` or `failed` (with retries).
 
 ---
 
@@ -140,7 +144,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 ## Limitations (honest)
 
 - **.ppt** (legacy binary) is not fully extracted; prefer **.pptx**.
-- Retrieval is **lexical**, not embedding-based (by design for this milestone).
+- Embeddings and generated answers require `OPENAI_API_KEY`; without it, lexical retrieval + deterministic fallback responses are used.
 - Upload body is **base64 JSON** (simple for apps); multipart can be added later.
 
 ---
@@ -152,6 +156,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 | `npm run dev` | `ts-node-dev` / dev entry |
 | `npm run build` | `tsc` compile |
 | `npm start` | Production start (see `package.json`) |
+| `npm run test:e2e:smoke` | Curl-based smoke flow (register/upload/ask) |
 
 ---
 

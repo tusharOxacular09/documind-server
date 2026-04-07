@@ -27,4 +27,7 @@ export const env = {
   refreshTokenSecret,
   accessTokenExpiry: process.env.ACCESS_TOKEN_EXPIRY ?? "15m",
   refreshTokenExpiry: process.env.REFRESH_TOKEN_EXPIRY ?? "7d",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiChatModel: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
+  openaiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
 };

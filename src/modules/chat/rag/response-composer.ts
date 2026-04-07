@@ -1,6 +1,10 @@
 import type { CitationDto } from "./retrieval.service";
+import { generateGroundedAnswer } from "./openai-rag.service";
 
-const composeGroundedAssistantReply = (userQuestion: string, citations: CitationDto[]): string => {
+const composeGroundedAssistantReply = async (userQuestion: string, citations: CitationDto[]): Promise<string> => {
+  const generated = await generateGroundedAnswer(userQuestion, citations);
+  if (generated) return generated;
+
   if (citations.length > 0) {
     return [
       "Here is a grounded answer based on retrieved passages from your documents (see sources below).",

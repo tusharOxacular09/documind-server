@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 
 import { DocumentChunkModel } from "../../document/document-chunk.model";
 import { DocumentModel } from "../../document/document.model";
+import { createEmbedding } from "./openai-rag.service";
 
 export type CitationDto = {
   documentId?: string;
@@ -19,6 +20,19 @@ const tokenize = (text: string): Set<string> =>
   );
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const cosineSimilarity = (a: number[], b: number[]): number => {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let aNorm = 0;
+  let bNorm = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    aNorm += a[i] * a[i];
+    bNorm += b[i] * b[i];
+  }
+  if (aNorm === 0 || bNorm === 0) return 0;
+  return dot / (Math.sqrt(aNorm) * Math.sqrt(bNorm));
+};
 
 /**
  * Multi-step retrieval: scope to user → load ready documents → fetch chunks → rank by lexical overlap → fuse by document.
@@ -36,13 +50,19 @@ const retrieveRankedCitations = async (
   const readyDocIds = readyDocs.map((doc) => doc._id);
 
   const chunkFilter = readyDocIds.length ? { userId: ownerId, documentId: { $in: readyDocIds } } : { userId: ownerId };
-  const candidateChunks = await DocumentChunkModel.find(chunkFilter).select("content documentId").lean();
+  const candidateChunks = await DocumentChunkModel.find(chunkFilter).select("content documentId embedding").lean();
 
   const queryTokens = tokenize(message);
+  const queryEmbedding = await createEmbedding(message);
   const rankedChunks = candidateChunks
     .map((chunk) => ({
       chunk,
-      score: [...tokenize(chunk.content)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0),
+      score: (() => {
+        const lexical = [...tokenize(chunk.content)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0);
+        if (!queryEmbedding || !Array.isArray(chunk.embedding) || chunk.embedding.length === 0) return lexical;
+        const semantic = cosineSimilarity(queryEmbedding, chunk.embedding);
+        return lexical + semantic * 4;
+      })(),
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);

@@ -182,7 +182,7 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
   const selectedDocumentIds = (documentIds ?? []).filter((id) => Types.ObjectId.isValid(id));
 
   const citations = await retrieveRankedCitations(ownerId, message, selectedDocumentIds);
-  const assistantContent = composeGroundedAssistantReply(message, citations);
+  const assistantContent = await composeGroundedAssistantReply(message, citations);
 
   if (!chat) {
     chat = await ChatModel.create({

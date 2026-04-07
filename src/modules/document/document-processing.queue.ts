@@ -4,6 +4,7 @@ import { DocumentChunkModel } from "./document-chunk.model";
 import { DocumentModel } from "./document.model";
 import { chunkText } from "./ingestion/document-chunker";
 import { extractDocumentText } from "./ingestion/document-extractor";
+import { createEmbedding } from "../chat/rag/openai-rag.service";
 
 type QueueJob = {
   documentId: string;
@@ -52,13 +53,21 @@ const processDocument = async (documentId: string): Promise<void> => {
   });
   await wait(300);
 
-  const chunks: { userId: Types.ObjectId; documentId: Types.ObjectId; index: number; content: string }[] = [];
+  const chunks: {
+    userId: Types.ObjectId;
+    documentId: Types.ObjectId;
+    index: number;
+    content: string;
+    embedding?: number[];
+  }[] = [];
   for (let i = 0; i < contentChunks.length; i += 1) {
+    const embedding = await createEmbedding(contentChunks[i]);
     chunks.push({
       userId: doc.userId,
       documentId: doc._id,
       index: i,
       content: contentChunks[i],
+      embedding: embedding ?? undefined,
     });
   }
 

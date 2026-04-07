@@ -6,6 +6,7 @@ export interface DocumentChunkEntity {
   documentId: Types.ObjectId;
   index: number;
   content: string;
+  embedding?: number[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,6 +17,7 @@ const documentChunkSchema = new Schema<DocumentChunkEntity>(
     documentId: { type: Schema.Types.ObjectId, ref: "Document", required: true, index: true },
     index: { type: Number, required: true, min: 0 },
     content: { type: String, required: true, trim: true },
+    embedding: { type: [Number], required: false, default: undefined },
   },
   { timestamps: true }
 );
