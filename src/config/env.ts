@@ -30,4 +30,6 @@ export const env = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   openaiChatModel: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
   openaiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
+  redisUrl: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
+  processorMode: process.env.PROCESSOR_MODE ?? "all",
 };

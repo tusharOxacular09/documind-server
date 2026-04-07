@@ -1,23 +1,26 @@
 import { Types } from "mongoose";
+import { Queue, Worker } from "bullmq";
+import IORedis from "ioredis";
 
 import { DocumentChunkModel } from "./document-chunk.model";
 import { DocumentModel } from "./document.model";
 import { chunkText } from "./ingestion/document-chunker";
 import { extractDocumentText } from "./ingestion/document-extractor";
 import { createEmbedding } from "../chat/rag/openai-rag.service";
+import { env } from "../../config/env";
 
 type QueueJob = {
   documentId: string;
-  attempts: number;
 };
-
-const queue: QueueJob[] = [];
-const inQueue = new Set<string>();
+const queueName = "document-processing";
+const redis = new IORedis(env.redisUrl, { maxRetriesPerRequest: null });
+const queue = new Queue<QueueJob>(queueName, { connection: redis });
+let worker: Worker<QueueJob> | null = null;
 let workerStarted = false;
-let running = false;
 let processedTotal = 0;
 let failedTotal = 0;
 let retriedTotal = 0;
+let inProgress = 0;
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -79,65 +82,54 @@ const processDocument = async (documentId: string): Promise<void> => {
   await markStatus(documentId, "ready");
 };
 
-const runLoop = async (): Promise<void> => {
-  if (running) return;
-  running = true;
-
-  while (queue.length > 0) {
-    const job = queue.shift();
-    if (!job) continue;
-
-    try {
-      await processDocument(job.documentId);
-      processedTotal += 1;
-      inQueue.delete(job.documentId);
-    } catch {
-      if (job.attempts < 2) {
-        retriedTotal += 1;
-        queue.push({ documentId: job.documentId, attempts: job.attempts + 1 });
-      } else {
-        await markStatus(job.documentId, "failed");
-        failedTotal += 1;
-        inQueue.delete(job.documentId);
-      }
-    }
-  }
-
-  running = false;
-};
-
 const enqueueDocumentProcessing = (documentId: string): void => {
   if (!Types.ObjectId.isValid(documentId)) return;
-  if (inQueue.has(documentId)) return;
-
-  inQueue.add(documentId);
-  queue.push({ documentId, attempts: 0 });
-  void runLoop();
+  void queue.add("ingest", { documentId }, { jobId: documentId, attempts: 3, backoff: { type: "fixed", delay: 2000 } });
 };
 
 const startDocumentProcessingWorker = (): void => {
   if (workerStarted) return;
   workerStarted = true;
-  // Keep queue draining if jobs arrive while idle.
-  setInterval(() => {
-    void runLoop();
-  }, 1000);
+  worker = new Worker<QueueJob>(
+    queueName,
+    async (job) => {
+      inProgress += 1;
+      await processDocument(job.data.documentId);
+      processedTotal += 1;
+      inProgress = Math.max(0, inProgress - 1);
+    },
+    { connection: redis }
+  );
+
+  worker.on("failed", async (job) => {
+    inProgress = Math.max(0, inProgress - 1);
+    if (!job) return;
+    if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      await markStatus(job.data.documentId, "failed");
+      failedTotal += 1;
+    } else {
+      retriedTotal += 1;
+    }
+  });
 };
 
-const getDocumentProcessingStats = (): {
+const getDocumentProcessingStats = async (): Promise<{
   running: boolean;
   queued: number;
   inProgress: number;
   processedTotal: number;
   failedTotal: number;
   retriedTotal: number;
-} => ({
-  running,
-  queued: queue.length,
-  inProgress: Math.max(0, inQueue.size - queue.length),
+}> => {
+  const counts = await queue.getJobCounts("waiting", "active", "delayed");
+  return {
+  running: Boolean(workerStarted),
+  queued: (counts.waiting ?? 0) + (counts.delayed ?? 0),
+  inProgress: counts.active ?? inProgress,
   processedTotal,
   failedTotal,
   retriedTotal,
-});
+  };
+};
 
 export { enqueueDocumentProcessing, getDocumentProcessingStats, startDocumentProcessingWorker };

@@ -6,6 +6,8 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev:api": "PROCESSOR_MODE=api ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev:worker": "PROCESSOR_MODE=worker ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -17,10 +19,12 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.73.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "helmet": "^8.0.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "mammoth": "^1.9.0",

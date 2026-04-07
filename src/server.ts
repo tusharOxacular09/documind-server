@@ -6,10 +6,16 @@ import { startDocumentProcessingWorker } from "./modules/document/document-proce
 const startServer = async (): Promise<void> => {
   try {
     await connectDatabase(env.mongoUri, env.mongodbDbName);
-    startDocumentProcessingWorker();
-    app.listen(env.port, () => {
-      console.log(`DocuMind server listening on port ${env.port}`);
-    });
+    if (env.processorMode === "all" || env.processorMode === "worker") {
+      startDocumentProcessingWorker();
+    }
+    if (env.processorMode === "all" || env.processorMode === "api") {
+      app.listen(env.port, () => {
+        console.log(`DocuMind server listening on port ${env.port}`);
+      });
+    } else {
+      console.log("DocuMind worker mode started");
+    }
   } catch (error) {
     console.error("Failed to start server", error);
     process.exit(1);

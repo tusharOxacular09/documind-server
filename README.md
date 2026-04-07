@@ -70,6 +70,8 @@ REFRESH_TOKEN_EXPIRY=7d
 OPENAI_API_KEY=
 OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+REDIS_URL=redis://127.0.0.1:6379
+PROCESSOR_MODE=all
 ```
 
 Production: restrict **`cors()`** in `src/app.ts` to your Next.js origin instead of open CORS if you expose this API publicly.
@@ -81,6 +83,16 @@ npm run dev
 ```
 
 API listens on `http://localhost:${PORT}` (default **5000**).
+
+For split-process mode:
+
+```bash
+# terminal 1
+npm run dev:api
+
+# terminal 2
+npm run dev:worker
+```
 
 ### 4. Compile
 
@@ -125,7 +137,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 ## Document lifecycle
 
 1. **Upload** — File saved under `uploads/<userId>/`, row `status: uploaded`.
-2. **Worker** — Job dequeued → `processing` → extract text → chunk → optional per-chunk embeddings (if OpenAI key exists) → replace `DocumentChunk` rows → `ready` or `failed` (with retries).
+2. **Worker** — Job dequeued from Redis/BullMQ → `processing` → extract text → chunk → optional per-chunk embeddings (if OpenAI key exists) → replace `DocumentChunk` rows → `ready` or `failed` (with retries).
 
 ---
 
@@ -141,7 +153,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 
 1. Provision **MongoDB** (URI in `MONGO_URI`).
 2. Set strong **`JWT_SECRET`** and token expiries.
-3. Run a single instance **or** accept that the in-process queue is not distributed across machines.
+3. Run API and worker as separate processes/containers against the same Redis for distributed processing.
 4. Update CORS in `app.ts` so only your deployed Next.js origin can call the API.
 5. Persist **`uploads/`** on disk or migrate to object storage for multi-instance setups.
 
@@ -160,6 +172,8 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 | Command | Purpose |
 |---------|---------|
 | `npm run dev` | `ts-node-dev` / dev entry |
+| `npm run dev:api` | API-only process |
+| `npm run dev:worker` | Worker-only process |
 | `npm run build` | `tsc` compile |
 | `npm start` | Production start (see `package.json`) |
 | `npm run test:e2e:smoke` | Curl-based smoke flow (register/upload/ask) |

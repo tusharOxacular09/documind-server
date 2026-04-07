@@ -80,12 +80,12 @@ const removeDocument = (req: Request, res: Response, next: NextFunction): void =
     .catch(next);
 };
 
-const processingHealth = (_req: Request, res: Response): void => {
-  res.status(200).json(
-    apiResponse.success("Document processing worker health", {
-      worker: getDocumentProcessingStats(),
+const processingHealth = (_req: Request, res: Response, next: NextFunction): void => {
+  getDocumentProcessingStats()
+    .then((worker) => {
+      res.status(200).json(apiResponse.success("Document processing worker health", { worker }));
     })
-  );
+    .catch(next);
 };
 
 export {
