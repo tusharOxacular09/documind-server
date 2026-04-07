@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { apiResponse } from "../../utils/api-response";
+import { getDocumentProcessingStats } from "./document-processing.queue";
 import { documentService } from "./document.service";
 
 const createDocument = (req: Request, res: Response, next: NextFunction): void => {
@@ -61,4 +62,12 @@ const removeDocument = (req: Request, res: Response, next: NextFunction): void =
     .catch(next);
 };
 
-export { createDocument, listDocuments, removeDocument, uploadDocument };
+const processingHealth = (_req: Request, res: Response): void => {
+  res.status(200).json(
+    apiResponse.success("Document processing worker health", {
+      worker: getDocumentProcessingStats(),
+    })
+  );
+};
+
+export { createDocument, listDocuments, processingHealth, removeDocument, uploadDocument };

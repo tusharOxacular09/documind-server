@@ -28,6 +28,7 @@ type DocumentDto = {
 };
 
 const ALLOWED_TYPES = new Set(["pdf", "docx", "ppt", "pptx"]);
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -71,9 +72,18 @@ const parseUploadInput = (payload: unknown): UploadDocumentInput => {
   if (!contentBase64) {
     throw new HttpError("File content is required", 400);
   }
+  if (base.sizeBytes > MAX_UPLOAD_BYTES) {
+    throw new HttpError("File exceeds 10MB upload limit", 413);
+  }
 
   return { ...base, contentBase64 };
 };
+
+const sanitizeFileName = (name: string): string =>
+  name
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 120);
 
 const toDocumentDto = (doc: {
   _id: Types.ObjectId;
@@ -125,11 +135,16 @@ const createUploadedDocument = async (userId: string, payload: unknown): Promise
     status: "uploaded",
   });
 
-  const filePath = path.join(uploadsDir, `${doc._id.toString()}-${input.name}`);
+  const safeName = sanitizeFileName(input.name);
+  const filePath = path.join(uploadsDir, `${doc._id.toString()}-${safeName}`);
   const fileBuffer = Buffer.from(input.contentBase64, "base64");
   if (fileBuffer.length === 0) {
     await DocumentModel.findByIdAndDelete(doc._id);
     throw new HttpError("Invalid file content", 400);
+  }
+  if (Math.abs(fileBuffer.length - input.sizeBytes) > 2048) {
+    await DocumentModel.findByIdAndDelete(doc._id);
+    throw new HttpError("Uploaded file size does not match metadata", 400);
   }
 
   await writeFile(filePath, fileBuffer);

@@ -14,6 +14,9 @@ const queue: QueueJob[] = [];
 const inQueue = new Set<string>();
 let workerStarted = false;
 let running = false;
+let processedTotal = 0;
+let failedTotal = 0;
+let retriedTotal = 0;
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -77,12 +80,15 @@ const runLoop = async (): Promise<void> => {
 
     try {
       await processDocument(job.documentId);
+      processedTotal += 1;
       inQueue.delete(job.documentId);
     } catch {
       if (job.attempts < 2) {
+        retriedTotal += 1;
         queue.push({ documentId: job.documentId, attempts: job.attempts + 1 });
       } else {
         await markStatus(job.documentId, "failed");
+        failedTotal += 1;
         inQueue.delete(job.documentId);
       }
     }
@@ -109,4 +115,20 @@ const startDocumentProcessingWorker = (): void => {
   }, 1000);
 };
 
-export { enqueueDocumentProcessing, startDocumentProcessingWorker };
+const getDocumentProcessingStats = (): {
+  running: boolean;
+  queued: number;
+  inProgress: number;
+  processedTotal: number;
+  failedTotal: number;
+  retriedTotal: number;
+} => ({
+  running,
+  queued: queue.length,
+  inProgress: inQueue.size - queue.length > 0 ? inQueue.size - queue.length : 0,
+  processedTotal,
+  failedTotal,
+  retriedTotal,
+});
+
+export { enqueueDocumentProcessing, getDocumentProcessingStats, startDocumentProcessingWorker };
