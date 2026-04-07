@@ -72,6 +72,12 @@ OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 REDIS_URL=redis://127.0.0.1:6379
 PROCESSOR_MODE=all
+APP_BASE_URL=http://localhost:3000
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+EMAIL_FROM=noreply@documind.local
 ```
 
 Production: restrict **`cors()`** in `src/app.ts` to your Next.js origin instead of open CORS if you expose this API publicly.
@@ -161,7 +167,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 
 ## Limitations (honest)
 
-- **.ppt** (legacy binary) is not fully extracted; prefer **.pptx**.
+- **.ppt** (legacy binary) uses a best-effort `soffice` conversion path when LibreOffice is available; otherwise it falls back to heuristic extraction.
 - Embeddings and generated answers require `OPENAI_API_KEY`; without it, lexical retrieval + deterministic fallback responses are used.
 - **Multipart** upload is available on `POST /api/documents/upload/multipart`; JSON base64 upload remains for API clients that prefer it.
 
@@ -177,6 +183,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 | `npm run build` | `tsc` compile |
 | `npm start` | Production start (see `package.json`) |
 | `npm run test:e2e:smoke` | Curl-based smoke flow (register/upload/ask) |
+| `npm run test:e2e:api` | Node assertion-based API auth/e2e checks |
 
 ---
 

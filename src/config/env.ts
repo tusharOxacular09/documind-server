@@ -32,4 +32,10 @@ export const env = {
   openaiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
   redisUrl: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
   processorMode: process.env.PROCESSOR_MODE ?? "all",
+  appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
+  smtpHost: process.env.SMTP_HOST ?? "",
+  smtpPort: Number(process.env.SMTP_PORT ?? 587),
+  smtpUser: process.env.SMTP_USER ?? "",
+  smtpPass: process.env.SMTP_PASS ?? "",
+  emailFrom: process.env.EMAIL_FROM ?? "noreply@documind.local",
 };

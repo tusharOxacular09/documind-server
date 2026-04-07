@@ -1,4 +1,9 @@
 import { readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import JSZip from "jszip";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
@@ -67,6 +72,22 @@ const extractPptxText = async (buffer: Buffer): Promise<string> => {
   return normalizeWhitespace(slideTexts.join("\n\n"));
 };
 
+const execFileAsync = promisify(execFile);
+
+const extractLegacyPptViaSoffice = async (inputPath: string): Promise<string> => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "documind-ppt-"));
+  try {
+    await execFileAsync("soffice", ["--headless", "--convert-to", "pptx", "--outdir", tmpDir, inputPath], {
+      timeout: 15000,
+    });
+    const converted = path.join(tmpDir, `${path.parse(inputPath).name}.pptx`);
+    const buffer = await readFile(converted);
+    return extractPptxText(buffer);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+};
+
 const extractByType = async (buffer: Buffer, type: SupportedDocumentType): Promise<string> => {
   if (type === "pdf") {
     return extractPdf(buffer);
@@ -74,8 +95,11 @@ const extractByType = async (buffer: Buffer, type: SupportedDocumentType): Promi
   if (type === "docx") {
     return extractDocx(buffer);
   }
-  if (type === "pptx" || type === "ppt") {
+  if (type === "pptx") {
     return extractPptxText(buffer);
+  }
+  if (type === "ppt") {
+    return "";
   }
   return "";
 };
@@ -89,7 +113,14 @@ const extractDocumentText = async (input: ExtractInput): Promise<string> => {
     const buffer = await readFile(input.storagePath);
 
     try {
-      const typed = await extractByType(buffer, input.type);
+      let typed = await extractByType(buffer, input.type);
+      if (input.type === "ppt" && typed.length < MIN_USEFUL_LENGTH && input.storagePath) {
+        try {
+          typed = await extractLegacyPptViaSoffice(input.storagePath);
+        } catch {
+          // Optional converter is not guaranteed to exist; fallback below.
+        }
+      }
       if (typed.length >= MIN_USEFUL_LENGTH) {
         return typed;
       }

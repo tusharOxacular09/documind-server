@@ -10,6 +10,8 @@ import { ChatModel } from "../chat/chat.model";
 import { DocumentChunkModel } from "../document/document-chunk.model";
 import { DocumentModel } from "../document/document.model";
 import { UserModel } from "../user/user.model";
+import { env } from "../../config/env";
+import { emailService } from "./email.service";
 import { jwtUtils } from "./jwt.utils";
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
@@ -105,12 +107,10 @@ const hashToken = (raw: string): string => createHash("sha256").update(raw).dige
 const createRawToken = (): string => randomBytes(32).toString("hex");
 
 const logActionLink = (kind: "verify-email" | "reset-password", email: string, token: string): void => {
-  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
   const url =
     kind === "verify-email"
-      ? `${base}/verify-email?token=${encodeURIComponent(token)}`
-      : `${base}/reset-password?token=${encodeURIComponent(token)}`;
-  // Demo delivery channel: log link for local testing.
+      ? `${env.appBaseUrl}/verify-email?token=${encodeURIComponent(token)}`
+      : `${env.appBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
   console.info(`[auth:${kind}] ${email} -> ${url}`);
 };
 
@@ -137,6 +137,7 @@ const register = async (payload: unknown): Promise<AuthResponse> => {
   user.emailVerificationTokenHash = hashToken(verifyToken);
   user.emailVerificationExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
   await user.save();
+  await emailService.sendVerificationEmail(user.email, verifyToken);
   logActionLink("verify-email", user.email, verifyToken);
 
   return toAuthResponse(user);
@@ -308,6 +309,7 @@ const requestEmailVerification = async (payload: unknown): Promise<{ requested: 
   user.emailVerificationTokenHash = hashToken(token);
   user.emailVerificationExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
   await user.save();
+  await emailService.sendVerificationEmail(user.email, token);
   logActionLink("verify-email", user.email, token);
   return { requested: true };
 };
@@ -339,6 +341,7 @@ const requestPasswordReset = async (payload: unknown): Promise<{ requested: true
   user.passwordResetTokenHash = hashToken(token);
   user.passwordResetExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
   await user.save();
+  await emailService.sendPasswordResetEmail(user.email, token);
   logActionLink("reset-password", user.email, token);
   return { requested: true };
 };
