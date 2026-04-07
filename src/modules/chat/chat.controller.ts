@@ -47,4 +47,21 @@ const askQuestion = (req: Request, res: Response, next: NextFunction): void => {
     .catch(next);
 };
 
-export { askQuestion, getChatById, listChats };
+const setMessageFeedback = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user?.userId) {
+    res.status(401).json(apiResponse.error("Unauthorized"));
+    return;
+  }
+
+  const chatId = typeof req.params.chatId === "string" ? req.params.chatId : "";
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+
+  chatService
+    .setMessageFeedback(req.user.userId, chatId, messageId, req.body)
+    .then((result) => {
+      res.status(200).json(apiResponse.success("Feedback saved successfully", result));
+    })
+    .catch(next);
+};
+
+export { askQuestion, getChatById, listChats, setMessageFeedback };

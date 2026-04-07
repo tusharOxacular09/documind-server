@@ -11,6 +11,7 @@ export interface ChatMessageEntity {
   role: "user" | "assistant";
   content: string;
   citations: CitationEntity[];
+  feedback: "none" | "up" | "down";
   createdAt: Date;
 }
 
@@ -38,6 +39,7 @@ const chatMessageSchema = new Schema<ChatMessageEntity>(
     role: { type: String, enum: ["user", "assistant"], required: true },
     content: { type: String, required: true, trim: true },
     citations: { type: [citationSchema], default: [] },
+    feedback: { type: String, enum: ["none", "up", "down"], default: "none" },
     createdAt: { type: Date, default: Date.now },
   },
   { _id: true }

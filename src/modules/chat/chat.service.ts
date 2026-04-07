@@ -17,6 +17,7 @@ type MessageDto = {
   content: string;
   createdAt: string;
   citations: CitationDto[];
+  feedback: "none" | "up" | "down";
 };
 
 type ChatSummaryDto = {
@@ -43,6 +44,7 @@ const toMessageDto = (message: {
   content: string;
   createdAt: Date;
   citations: { documentId?: Types.ObjectId; documentName: string; snippet: string }[];
+  feedback: "none" | "up" | "down";
 }): MessageDto => ({
   id: message._id.toString(),
   role: message.role,
@@ -53,6 +55,7 @@ const toMessageDto = (message: {
     documentName: citation.documentName,
     snippet: citation.snippet,
   })),
+  feedback: message.feedback,
 });
 
 const tokenize = (text: string): Set<string> =>
@@ -87,6 +90,17 @@ const parseAskPayload = (
   }
 
   return { message, chatId, documentIds };
+};
+
+const parseFeedbackPayload = (payload: unknown): { feedback: "up" | "down" | "none" } => {
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+  const feedback = typeof payload.feedback === "string" ? payload.feedback : "";
+  if (feedback !== "up" && feedback !== "down" && feedback !== "none") {
+    throw new HttpError("Feedback must be one of: up, down, none", 400);
+  }
+  return { feedback };
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -226,6 +240,7 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
     role: "user",
     content: message,
     citations: [],
+    feedback: "none",
     createdAt: new Date(),
   });
   chat.messages.push({
@@ -237,6 +252,7 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
       documentName: citation.documentName,
       snippet: citation.snippet,
     })),
+    feedback: "none",
     createdAt: new Date(),
   });
   chat.lastMessageAt = new Date();
@@ -263,6 +279,7 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
         documentName: c.documentName,
         snippet: c.snippet,
       })),
+      feedback: userMessage.feedback,
     }),
     assistantMessage: toMessageDto({
       _id: assistantMessage._id,
@@ -274,12 +291,44 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
         documentName: c.documentName,
         snippet: c.snippet,
       })),
+      feedback: assistantMessage.feedback,
     }),
   };
+};
+
+const setMessageFeedback = async (
+  userId: string,
+  chatId: string,
+  messageId: string,
+  payload: unknown
+): Promise<{ chatId: string; messageId: string; feedback: "up" | "down" | "none" }> => {
+  const ownerId = ensureObjectId(userId, "Invalid user identifier");
+  const chatObjectId = ensureObjectId(chatId, "Invalid chat identifier");
+  const messageObjectId = ensureObjectId(messageId, "Invalid message identifier");
+  const { feedback } = parseFeedbackPayload(payload);
+
+  const chat = await ChatModel.findOne({ _id: chatObjectId, userId: ownerId });
+  if (!chat) {
+    throw new HttpError("Chat not found", 404);
+  }
+
+  const message = chat.messages.find((m) => m._id.toString() === messageObjectId.toString());
+  if (!message) {
+    throw new HttpError("Message not found", 404);
+  }
+  if (message.role !== "assistant") {
+    throw new HttpError("Feedback can only be set for assistant messages", 400);
+  }
+
+  message.feedback = feedback;
+  await chat.save();
+
+  return { chatId, messageId, feedback };
 };
 
 export const chatService = {
   listChats,
   getChatById,
   askQuestion,
+  setMessageFeedback,
 };
