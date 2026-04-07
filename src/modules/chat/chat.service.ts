@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
+import { DocumentChunkModel } from "../document/document-chunk.model";
 import { DocumentModel } from "../document/document.model";
 import { ChatModel } from "./chat.model";
 
@@ -88,6 +89,8 @@ const parseAskPayload = (
   return { message, chatId, documentIds };
 };
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const listChats = async (userId: string): Promise<{ chats: ChatSummaryDto[] }> => {
   const ownerId = ensureObjectId(userId, "Invalid user identifier");
 
@@ -148,27 +151,61 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
     ? { _id: { $in: selectedDocumentIds.map((id) => new Types.ObjectId(id)) }, userId: ownerId }
     : { userId: ownerId };
 
-  // Retrieval step: gather candidate documents for this user.
-  const candidates = await DocumentModel.find(documentFilter).select("name type status").lean();
+  const readyDocs = await DocumentModel.find({ ...documentFilter, status: "ready" }).select("_id name type").lean();
+  const readyDocIds = readyDocs.map((doc) => doc._id);
 
-  // Ranking step: prioritize documents whose name overlaps the query terms.
+  // Retrieval step: gather candidate chunks from processed documents.
+  const chunkFilter = readyDocIds.length ? { userId: ownerId, documentId: { $in: readyDocIds } } : { userId: ownerId };
+  const candidateChunks = await DocumentChunkModel.find(chunkFilter).select("content documentId").lean();
+
+  // Ranking step: score chunk overlap with query tokens.
   const queryTokens = tokenize(message);
-  const ranked = candidates
-    .map((doc) => ({
-      doc,
-      score: [...tokenize(doc.name)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0),
+  const rankedChunks = candidateChunks
+    .map((chunk) => ({
+      chunk,
+      score: [...tokenize(chunk.content)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0),
     }))
-    .sort((a, b) => b.score - a.score || a.doc.name.localeCompare(b.doc.name))
-    .slice(0, 3);
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
 
-  const citations: CitationDto[] = ranked
-    .filter(({ score }, idx) => score > 0 || idx === 0)
+  const docMap = new Map(readyDocs.map((doc) => [doc._id.toString(), doc]));
+  const grouped = new Map<string, { score: number; snippet: string }>();
+  for (const item of rankedChunks) {
+    const docId = item.chunk.documentId.toString();
+    const existing = grouped.get(docId);
+    const snippet = item.chunk.content.slice(0, 180);
+    if (!existing || item.score > existing.score) {
+      grouped.set(docId, { score: item.score, snippet });
+    }
+  }
+
+  const citationScores: { score: number; citation: CitationDto }[] = [];
+  for (const [docId, data] of grouped.entries()) {
+    const doc = docMap.get(docId);
+    if (!doc) continue;
+    citationScores.push({
+      score: data.score,
+      citation: {
+        documentId: docId,
+        documentName: doc.name,
+        snippet: data.snippet,
+      },
+    });
+  }
+
+  const citations: CitationDto[] = citationScores
+    .sort((a, b) => b.score - a.score || a.citation.documentName.localeCompare(b.citation.documentName))
+    .map((entry) => entry.citation)
+    .filter((_, idx) => idx < 2)
     .slice(0, 2)
-    .map(({ doc }) => ({
-      documentId: doc._id.toString(),
-      documentName: doc.name,
-      snippet: `Referenced from ${doc.type.toUpperCase()} document (${doc.status}).`,
-    }));
+    .filter((citation, idx) => {
+      if (queryTokens.size === 0) return idx === 0;
+      const tokenRegex = new RegExp(
+        [...queryTokens].map((token) => `\\b${escapeRegExp(token)}\\b`).join("|"),
+        "i"
+      );
+      return tokenRegex.test(citation.snippet) || idx === 0;
+    });
 
   const assistantContent =
     citations.length > 0

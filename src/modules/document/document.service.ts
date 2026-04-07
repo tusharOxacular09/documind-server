@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
+import { DocumentChunkModel } from "./document-chunk.model";
 import { enqueueDocumentProcessing } from "./document-processing.queue";
 import { DocumentModel } from "./document.model";
 
@@ -111,6 +112,8 @@ const deleteDocument = async (userId: string, documentId: string): Promise<void>
   if (!deleted) {
     throw new HttpError("Document not found", 404);
   }
+
+  await DocumentChunkModel.deleteMany({ documentId: new Types.ObjectId(documentId), userId: ownerId });
 };
 
 export const documentService = {
