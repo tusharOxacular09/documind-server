@@ -101,10 +101,12 @@ Runs `tsc`. Production entry: **`npm start`** → `node dist/server.js`.
 | POST | `/api/auth/refresh` | No | New access token |
 | GET | `/api/auth/me` | Yes | Current user |
 | PUT | `/api/auth/profile` | Yes | Update name/email |
+| POST | `/api/auth/account/delete` | Yes | Delete account (`password` in JSON body) |
 | GET | `/api/documents/processing/health` | No | Queue/worker metrics |
 | GET | `/api/documents` | Yes | List documents |
 | POST | `/api/documents` | Yes | Create metadata (optional path) |
 | POST | `/api/documents/upload` | Yes | Upload file (JSON body: base64 + metadata) |
+| POST | `/api/documents/upload/multipart` | Yes | Upload file (`multipart/form-data`, field `file`) |
 | DELETE | `/api/documents/:id` | Yes | Delete document + chunks |
 | GET | `/api/chats` | Yes | List chats |
 | GET | `/api/chats/suggestions` | Yes | Starter questions |
@@ -145,7 +147,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 
 - **.ppt** (legacy binary) is not fully extracted; prefer **.pptx**.
 - Embeddings and generated answers require `OPENAI_API_KEY`; without it, lexical retrieval + deterministic fallback responses are used.
-- Upload body is **base64 JSON** (simple for apps); multipart can be added later.
+- **Multipart** upload is available on `POST /api/documents/upload/multipart`; JSON base64 upload remains for API clients that prefer it.
 
 ---
 

@@ -32,6 +32,24 @@ const uploadDocument = (req: Request, res: Response, next: NextFunction): void =
     .catch(next);
 };
 
+const uploadDocumentMultipart = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user?.userId) {
+    res.status(401).json(apiResponse.error("Unauthorized"));
+    return;
+  }
+  if (!req.file) {
+    res.status(400).json(apiResponse.error("Missing file (use multipart field name 'file')"));
+    return;
+  }
+
+  documentService
+    .createUploadedDocumentMultipart(req.user.userId, req.file)
+    .then((result) => {
+      res.status(201).json(apiResponse.success("Document uploaded successfully", result));
+    })
+    .catch(next);
+};
+
 const listDocuments = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user?.userId) {
     res.status(401).json(apiResponse.error("Unauthorized"));
@@ -70,4 +88,11 @@ const processingHealth = (_req: Request, res: Response): void => {
   );
 };
 
-export { createDocument, listDocuments, processingHealth, removeDocument, uploadDocument };
+export {
+  createDocument,
+  listDocuments,
+  processingHealth,
+  removeDocument,
+  uploadDocument,
+  uploadDocumentMultipart,
+};

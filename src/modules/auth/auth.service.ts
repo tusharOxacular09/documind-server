@@ -1,7 +1,13 @@
+import { rm } from "node:fs/promises";
+import path from "node:path";
+
 import bcrypt from "bcryptjs";
 import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
+import { ChatModel } from "../chat/chat.model";
+import { DocumentChunkModel } from "../document/document-chunk.model";
+import { DocumentModel } from "../document/document.model";
 import { UserModel } from "../user/user.model";
 import { jwtUtils } from "./jwt.utils";
 
@@ -217,10 +223,58 @@ const updateProfile = async (userId: string, payload: unknown): Promise<SafeUser
   };
 };
 
+const parseDeleteAccountPayload = (payload: unknown): { password: string } => {
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+  const password = typeof payload.password === "string" ? payload.password : "";
+  if (!password) {
+    throw new HttpError("Password is required", 400);
+  }
+  return { password };
+};
+
+const deleteAccount = async (userId: string, payload: unknown): Promise<{ deleted: true }> => {
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new HttpError("Invalid user identifier", 400);
+  }
+  const ownerId = new Types.ObjectId(userId);
+  const { password } = parseDeleteAccountPayload(payload);
+
+  const user = await UserModel.findById(ownerId).select("password");
+  if (!user) {
+    throw new HttpError("User not found", 404);
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password);
+  if (!passwordMatches) {
+    throw new HttpError("Invalid credentials", 401);
+  }
+
+  const docs = await DocumentModel.find({ userId: ownerId }).select("storagePath").lean();
+  for (const doc of docs) {
+    if (doc.storagePath) {
+      await rm(doc.storagePath, { force: true });
+    }
+  }
+
+  await DocumentChunkModel.deleteMany({ userId: ownerId });
+  await ChatModel.deleteMany({ userId: ownerId });
+  await DocumentModel.deleteMany({ userId: ownerId });
+
+  const uploadsDir = path.resolve(process.cwd(), "uploads", ownerId.toString());
+  await rm(uploadsDir, { recursive: true, force: true });
+
+  await UserModel.findByIdAndDelete(ownerId);
+
+  return { deleted: true };
+};
+
 export const authService = {
   register,
   login,
   refreshAccessToken,
   getCurrentUser,
   updateProfile,
+  deleteAccount,
 };

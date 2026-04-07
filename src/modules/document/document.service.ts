@@ -1,3 +1,5 @@
+/// <reference types="multer" />
+
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Types } from "mongoose";
@@ -120,33 +122,40 @@ const createDocument = async (userId: string, payload: unknown): Promise<{ docum
   return { document: toDocumentDto(doc) };
 };
 
-const createUploadedDocument = async (userId: string, payload: unknown): Promise<{ document: DocumentDto }> => {
-  const ownerId = ensureUserId(userId);
-  const input = parseUploadInput(payload);
+type PersistedUploadMeta = {
+  name: string;
+  type: CreateDocumentInput["type"];
+  sizeBytes: number;
+};
+
+const persistUploadedBuffer = async (
+  ownerId: Types.ObjectId,
+  meta: PersistedUploadMeta,
+  fileBuffer: Buffer
+): Promise<{ document: DocumentDto }> => {
+  if (fileBuffer.length === 0) {
+    throw new HttpError("Invalid file content", 400);
+  }
+  if (meta.sizeBytes > MAX_UPLOAD_BYTES) {
+    throw new HttpError("File exceeds 10MB upload limit", 413);
+  }
+  if (Math.abs(fileBuffer.length - meta.sizeBytes) > 2048) {
+    throw new HttpError("Uploaded file size does not match metadata", 400);
+  }
 
   const uploadsDir = path.resolve(process.cwd(), "uploads", ownerId.toString());
   await mkdir(uploadsDir, { recursive: true });
 
   const doc = await DocumentModel.create({
     userId: ownerId,
-    name: input.name,
-    type: input.type,
-    sizeBytes: input.sizeBytes,
+    name: meta.name,
+    type: meta.type,
+    sizeBytes: meta.sizeBytes,
     status: "uploaded",
   });
 
-  const safeName = sanitizeFileName(input.name);
+  const safeName = sanitizeFileName(meta.name);
   const filePath = path.join(uploadsDir, `${doc._id.toString()}-${safeName}`);
-  const fileBuffer = Buffer.from(input.contentBase64, "base64");
-  if (fileBuffer.length === 0) {
-    await DocumentModel.findByIdAndDelete(doc._id);
-    throw new HttpError("Invalid file content", 400);
-  }
-  if (Math.abs(fileBuffer.length - input.sizeBytes) > 2048) {
-    await DocumentModel.findByIdAndDelete(doc._id);
-    throw new HttpError("Uploaded file size does not match metadata", 400);
-  }
-
   await writeFile(filePath, fileBuffer);
   doc.storagePath = filePath;
   await doc.save();
@@ -154,6 +163,36 @@ const createUploadedDocument = async (userId: string, payload: unknown): Promise
   enqueueDocumentProcessing(doc._id.toString());
 
   return { document: toDocumentDto(doc) };
+};
+
+const createUploadedDocument = async (userId: string, payload: unknown): Promise<{ document: DocumentDto }> => {
+  const ownerId = ensureUserId(userId);
+  const input = parseUploadInput(payload);
+  const fileBuffer = Buffer.from(input.contentBase64, "base64");
+  const { name, type, sizeBytes } = input;
+  return persistUploadedBuffer(ownerId, { name, type, sizeBytes }, fileBuffer);
+};
+
+const createUploadedDocumentMultipart = async (
+  userId: string,
+  file: Express.Multer.File
+): Promise<{ document: DocumentDto }> => {
+  const ownerId = ensureUserId(userId);
+  const name = (file.originalname ?? "upload").trim() || "upload";
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_TYPES.has(ext)) {
+    throw new HttpError("Unsupported document type", 400);
+  }
+  const type = ext as CreateDocumentInput["type"];
+  const fileBuffer = file.buffer;
+  const sizeBytes = file.size;
+  if (!fileBuffer?.length) {
+    throw new HttpError("Invalid file content", 400);
+  }
+  if (sizeBytes > MAX_UPLOAD_BYTES) {
+    throw new HttpError("File exceeds 10MB upload limit", 413);
+  }
+  return persistUploadedBuffer(ownerId, { name, type, sizeBytes }, fileBuffer);
 };
 
 const listDocuments = async (userId: string): Promise<{ documents: DocumentDto[] }> => {
@@ -188,6 +227,7 @@ const deleteDocument = async (userId: string, documentId: string): Promise<void>
 export const documentService = {
   createDocument,
   createUploadedDocument,
+  createUploadedDocumentMultipart,
   listDocuments,
   deleteDocument,
 };

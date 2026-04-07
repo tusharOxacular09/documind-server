@@ -59,4 +59,18 @@ const updateProfile = (req: Request, res: Response, next: NextFunction): void =>
     .catch(next);
 };
 
-export { login, me, refresh, register, updateProfile };
+const deleteAccount = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user?.userId) {
+    res.status(401).json(apiResponse.error("Unauthorized"));
+    return;
+  }
+
+  authService
+    .deleteAccount(req.user.userId, req.body)
+    .then((result) => {
+      res.status(200).json(apiResponse.success("Account deleted successfully", result));
+    })
+    .catch(next);
+};
+
+export { deleteAccount, login, me, refresh, register, updateProfile };
