@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
+import { enqueueDocumentProcessing } from "./document-processing.queue";
 import { DocumentModel } from "./document.model";
 
 type CreateDocumentInput = {
@@ -82,6 +83,8 @@ const createDocument = async (userId: string, payload: unknown): Promise<{ docum
     sizeBytes: input.sizeBytes,
     status: "uploaded",
   });
+
+  enqueueDocumentProcessing(doc._id.toString());
 
   return { document: toDocumentDto(doc) };
 };
