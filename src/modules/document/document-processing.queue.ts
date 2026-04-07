@@ -125,7 +125,7 @@ const getDocumentProcessingStats = (): {
 } => ({
   running,
   queued: queue.length,
-  inProgress: inQueue.size - queue.length > 0 ? inQueue.size - queue.length : 0,
+  inProgress: Math.max(0, inQueue.size - queue.length),
   processedTotal,
   failedTotal,
   retriedTotal,
