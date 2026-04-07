@@ -17,6 +17,20 @@ const listChats = (req: Request, res: Response, next: NextFunction): void => {
     .catch(next);
 };
 
+const listSuggestions = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user?.userId) {
+    res.status(401).json(apiResponse.error("Unauthorized"));
+    return;
+  }
+
+  chatService
+    .getQuerySuggestions(req.user.userId)
+    .then((result) => {
+      res.status(200).json(apiResponse.success("Suggestions fetched successfully", result));
+    })
+    .catch(next);
+};
+
 const getChatById = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user?.userId) {
     res.status(401).json(apiResponse.error("Unauthorized"));
@@ -64,4 +78,4 @@ const setMessageFeedback = (req: Request, res: Response, next: NextFunction): vo
     .catch(next);
 };
 
-export { askQuestion, getChatById, listChats, setMessageFeedback };
+export { askQuestion, getChatById, listChats, listSuggestions, setMessageFeedback };

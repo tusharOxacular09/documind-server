@@ -28,6 +28,10 @@ type ChatSummaryDto = {
   lastMessagePreview: string;
 };
 
+type SuggestionDto = {
+  text: string;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -104,6 +108,36 @@ const parseFeedbackPayload = (payload: unknown): { feedback: "up" | "down" | "no
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getQuerySuggestions = async (userId: string): Promise<{ suggestions: SuggestionDto[] }> => {
+  const ownerId = ensureObjectId(userId, "Invalid user identifier");
+
+  const readyDocs = await DocumentModel.find({ userId: ownerId, status: "ready" }).select("name").limit(8).lean();
+  const chunks = await DocumentChunkModel.find({ userId: ownerId }).select("content").limit(20).lean();
+  const chats = await ChatModel.find({ userId: ownerId }).select("messages.content").limit(6).lean();
+
+  const docSuggestions = readyDocs.map((doc) => `Summarize ${doc.name}`);
+  const chunkHints = chunks
+    .map((chunk) => chunk.content.split(/[.?!]/)[0]?.trim())
+    .filter((s): s is string => Boolean(s) && s.length > 20)
+    .slice(0, 4)
+    .map((line) => `Explain: ${line.slice(0, 70)}`);
+  const priorQuestions = chats
+    .flatMap((chat) => chat.messages)
+    .map((m) => m.content)
+    .filter((content) => content.endsWith("?"))
+    .slice(-4);
+
+  const unique = new Set<string>([
+    ...docSuggestions,
+    ...chunkHints,
+    ...priorQuestions,
+    "What are the key takeaways across my documents?",
+    "Which documents mention action items?",
+  ]);
+
+  return { suggestions: [...unique].slice(0, 8).map((text) => ({ text })) };
+};
 
 const listChats = async (userId: string): Promise<{ chats: ChatSummaryDto[] }> => {
   const ownerId = ensureObjectId(userId, "Invalid user identifier");
@@ -331,4 +365,5 @@ export const chatService = {
   getChatById,
   askQuestion,
   setMessageFeedback,
+  getQuerySuggestions,
 };
