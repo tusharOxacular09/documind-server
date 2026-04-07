@@ -1,3 +1,5 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
@@ -9,6 +11,10 @@ type CreateDocumentInput = {
   name: string;
   type: "pdf" | "docx" | "ppt" | "pptx";
   sizeBytes: number;
+};
+
+type UploadDocumentInput = CreateDocumentInput & {
+  contentBase64: string;
 };
 
 type DocumentDto = {
@@ -55,6 +61,20 @@ const parseCreateInput = (payload: unknown): CreateDocumentInput => {
   return { name, type: type as CreateDocumentInput["type"], sizeBytes };
 };
 
+const parseUploadInput = (payload: unknown): UploadDocumentInput => {
+  const base = parseCreateInput(payload);
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+
+  const contentBase64 = typeof payload.contentBase64 === "string" ? payload.contentBase64.trim() : "";
+  if (!contentBase64) {
+    throw new HttpError("File content is required", 400);
+  }
+
+  return { ...base, contentBase64 };
+};
+
 const toDocumentDto = (doc: {
   _id: Types.ObjectId;
   name: string;
@@ -90,6 +110,37 @@ const createDocument = async (userId: string, payload: unknown): Promise<{ docum
   return { document: toDocumentDto(doc) };
 };
 
+const createUploadedDocument = async (userId: string, payload: unknown): Promise<{ document: DocumentDto }> => {
+  const ownerId = ensureUserId(userId);
+  const input = parseUploadInput(payload);
+
+  const uploadsDir = path.resolve(process.cwd(), "uploads", ownerId.toString());
+  await mkdir(uploadsDir, { recursive: true });
+
+  const doc = await DocumentModel.create({
+    userId: ownerId,
+    name: input.name,
+    type: input.type,
+    sizeBytes: input.sizeBytes,
+    status: "uploaded",
+  });
+
+  const filePath = path.join(uploadsDir, `${doc._id.toString()}-${input.name}`);
+  const fileBuffer = Buffer.from(input.contentBase64, "base64");
+  if (fileBuffer.length === 0) {
+    await DocumentModel.findByIdAndDelete(doc._id);
+    throw new HttpError("Invalid file content", 400);
+  }
+
+  await writeFile(filePath, fileBuffer);
+  doc.storagePath = filePath;
+  await doc.save();
+
+  enqueueDocumentProcessing(doc._id.toString());
+
+  return { document: toDocumentDto(doc) };
+};
+
 const listDocuments = async (userId: string): Promise<{ documents: DocumentDto[] }> => {
   const ownerId = ensureUserId(userId);
   const docs = await DocumentModel.find({ userId: ownerId }).sort({ createdAt: -1 }).lean();
@@ -106,7 +157,7 @@ const deleteDocument = async (userId: string, documentId: string): Promise<void>
     _id: new Types.ObjectId(documentId),
     userId: ownerId,
   })
-    .select("_id")
+    .select("_id storagePath")
     .lean();
 
   if (!deleted) {
@@ -114,10 +165,14 @@ const deleteDocument = async (userId: string, documentId: string): Promise<void>
   }
 
   await DocumentChunkModel.deleteMany({ documentId: new Types.ObjectId(documentId), userId: ownerId });
+  if (deleted.storagePath) {
+    await rm(deleted.storagePath, { force: true });
+  }
 };
 
 export const documentService = {
   createDocument,
+  createUploadedDocument,
   listDocuments,
   deleteDocument,
 };

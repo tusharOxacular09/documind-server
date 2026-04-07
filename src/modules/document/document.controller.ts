@@ -17,6 +17,20 @@ const createDocument = (req: Request, res: Response, next: NextFunction): void =
     .catch(next);
 };
 
+const uploadDocument = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.user?.userId) {
+    res.status(401).json(apiResponse.error("Unauthorized"));
+    return;
+  }
+
+  documentService
+    .createUploadedDocument(req.user.userId, req.body)
+    .then((result) => {
+      res.status(201).json(apiResponse.success("Document uploaded successfully", result));
+    })
+    .catch(next);
+};
+
 const listDocuments = (req: Request, res: Response, next: NextFunction): void => {
   if (!req.user?.userId) {
     res.status(401).json(apiResponse.error("Unauthorized"));
@@ -47,4 +61,4 @@ const removeDocument = (req: Request, res: Response, next: NextFunction): void =
     .catch(next);
 };
 
-export { createDocument, listDocuments, removeDocument };
+export { createDocument, listDocuments, removeDocument, uploadDocument };

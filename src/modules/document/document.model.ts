@@ -8,6 +8,7 @@ export interface DocumentEntity {
   name: string;
   type: "pdf" | "docx" | "ppt" | "pptx";
   sizeBytes: number;
+  storagePath?: string;
   status: DocumentStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -19,6 +20,7 @@ const documentSchema = new Schema<DocumentEntity>(
     name: { type: String, required: true, trim: true },
     type: { type: String, enum: ["pdf", "docx", "ppt", "pptx"], required: true },
     sizeBytes: { type: Number, required: true, min: 0 },
+    storagePath: { type: String, required: false },
     status: { type: String, enum: ["uploaded", "processing", "ready", "failed"], default: "uploaded" },
   },
   { timestamps: true }
