@@ -99,6 +99,10 @@ Runs `tsc`. Production entry: **`npm start`** → `node dist/server.js`.
 | POST | `/api/auth/register` | No | Sign up |
 | POST | `/api/auth/login` | No | Sign in |
 | POST | `/api/auth/refresh` | No | New access token |
+| POST | `/api/auth/verification/request` | No | Request email verification link (logged in server) |
+| POST | `/api/auth/verification/confirm` | No | Verify email using token |
+| POST | `/api/auth/password/forgot` | No | Request password reset link (logged in server) |
+| POST | `/api/auth/password/reset` | No | Reset password with token |
 | GET | `/api/auth/me` | Yes | Current user |
 | PUT | `/api/auth/profile` | Yes | Update name/email |
 | POST | `/api/auth/account/delete` | Yes | Delete account (`password` in JSON body) |

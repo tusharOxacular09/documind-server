@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 
 import bcrypt from "bcryptjs";
 import { Types } from "mongoose";
@@ -13,6 +14,7 @@ import { jwtUtils } from "./jwt.utils";
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 const SALT_ROUNDS = 10;
+const TOKEN_TTL_MS = 1000 * 60 * 30;
 
 type RegisterInput = {
   name: string;
@@ -98,6 +100,20 @@ const toAuthResponse = (user: { _id: Types.ObjectId; name: string; email: string
   user: toSafeUser(user),
 });
 
+const hashToken = (raw: string): string => createHash("sha256").update(raw).digest("hex");
+
+const createRawToken = (): string => randomBytes(32).toString("hex");
+
+const logActionLink = (kind: "verify-email" | "reset-password", email: string, token: string): void => {
+  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+  const url =
+    kind === "verify-email"
+      ? `${base}/verify-email?token=${encodeURIComponent(token)}`
+      : `${base}/reset-password?token=${encodeURIComponent(token)}`;
+  // Demo delivery channel: log link for local testing.
+  console.info(`[auth:${kind}] ${email} -> ${url}`);
+};
+
 const register = async (payload: unknown): Promise<AuthResponse> => {
   const input = parseRegisterInput(payload);
   validateRegisterInput(input);
@@ -114,7 +130,14 @@ const register = async (payload: unknown): Promise<AuthResponse> => {
     name: input.name.trim(),
     email,
     password: passwordHash,
+    emailVerified: false,
   });
+
+  const verifyToken = createRawToken();
+  user.emailVerificationTokenHash = hashToken(verifyToken);
+  user.emailVerificationExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  await user.save();
+  logActionLink("verify-email", user.email, verifyToken);
 
   return toAuthResponse(user);
 };
@@ -133,6 +156,9 @@ const login = async (payload: unknown): Promise<AuthResponse> => {
   const passwordMatches = await bcrypt.compare(input.password, user.password);
   if (!passwordMatches) {
     throw new HttpError("Invalid credentials", 401);
+  }
+  if (!user.emailVerified) {
+    throw new HttpError("Please verify your email before logging in", 403);
   }
 
   return toAuthResponse(user);
@@ -234,6 +260,107 @@ const parseDeleteAccountPayload = (payload: unknown): { password: string } => {
   return { password };
 };
 
+const parseEmailPayload = (payload: unknown): { email: string } => {
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+  const email = typeof payload.email === "string" ? normalizeEmail(payload.email) : "";
+  if (!EMAIL_REGEX.test(email)) {
+    throw new HttpError("Invalid email format", 400);
+  }
+  return { email };
+};
+
+const parseTokenPayload = (payload: unknown): { token: string } => {
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  if (!token) {
+    throw new HttpError("Token is required", 400);
+  }
+  return { token };
+};
+
+const parsePasswordResetPayload = (payload: unknown): { token: string; newPassword: string } => {
+  if (!isRecord(payload)) {
+    throw new HttpError("Invalid request payload", 400);
+  }
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  const newPassword = typeof payload.newPassword === "string" ? payload.newPassword : "";
+  if (!token) {
+    throw new HttpError("Token is required", 400);
+  }
+  if (newPassword.length < 6) {
+    throw new HttpError("New password must be at least 6 characters", 400);
+  }
+  return { token, newPassword };
+};
+
+const requestEmailVerification = async (payload: unknown): Promise<{ requested: true }> => {
+  const { email } = parseEmailPayload(payload);
+  const user = await UserModel.findOne({ email });
+  if (!user || user.emailVerified) {
+    return { requested: true };
+  }
+
+  const token = createRawToken();
+  user.emailVerificationTokenHash = hashToken(token);
+  user.emailVerificationExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  await user.save();
+  logActionLink("verify-email", user.email, token);
+  return { requested: true };
+};
+
+const confirmEmailVerification = async (payload: unknown): Promise<{ verified: true }> => {
+  const { token } = parseTokenPayload(payload);
+  const tokenHash = hashToken(token);
+  const user = await UserModel.findOne({
+    emailVerificationTokenHash: tokenHash,
+    emailVerificationExpiresAt: { $gt: new Date() },
+  });
+  if (!user) {
+    throw new HttpError("Invalid or expired token", 400);
+  }
+
+  user.emailVerified = true;
+  user.emailVerificationTokenHash = undefined;
+  user.emailVerificationExpiresAt = undefined;
+  await user.save();
+  return { verified: true };
+};
+
+const requestPasswordReset = async (payload: unknown): Promise<{ requested: true }> => {
+  const { email } = parseEmailPayload(payload);
+  const user = await UserModel.findOne({ email });
+  if (!user) return { requested: true };
+
+  const token = createRawToken();
+  user.passwordResetTokenHash = hashToken(token);
+  user.passwordResetExpiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  await user.save();
+  logActionLink("reset-password", user.email, token);
+  return { requested: true };
+};
+
+const resetPassword = async (payload: unknown): Promise<{ reset: true }> => {
+  const { token, newPassword } = parsePasswordResetPayload(payload);
+  const tokenHash = hashToken(token);
+  const user = await UserModel.findOne({
+    passwordResetTokenHash: tokenHash,
+    passwordResetExpiresAt: { $gt: new Date() },
+  });
+  if (!user) {
+    throw new HttpError("Invalid or expired token", 400);
+  }
+
+  user.password = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetExpiresAt = undefined;
+  await user.save();
+  return { reset: true };
+};
+
 const deleteAccount = async (userId: string, payload: unknown): Promise<{ deleted: true }> => {
   if (!Types.ObjectId.isValid(userId)) {
     throw new HttpError("Invalid user identifier", 400);
@@ -277,4 +404,8 @@ export const authService = {
   getCurrentUser,
   updateProfile,
   deleteAccount,
+  requestEmailVerification,
+  confirmEmailVerification,
+  requestPasswordReset,
+  resetPassword,
 };
