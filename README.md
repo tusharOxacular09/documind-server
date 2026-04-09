@@ -6,7 +6,18 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 
 ---
 
-## Stack
+## Project overview
+
+This backend exposes a clean REST surface for:
+
+- **User authentication** with refresh tokens and strict user isolation.
+- **Document ingestion**: upload → persist → enqueue → background processing.
+- **Processing pipeline**: extract text → chunk → (optional) embed → persist chunks.
+- **Retrieval + grounded Q&A** for chat: rank chunks, attach citations, generate an answer (optional OpenAI) or return a safe fallback.
+
+---
+
+## Chosen tech stack (and why)
 
 | Layer | Choice |
 |--------|--------|
@@ -14,8 +25,16 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 | HTTP | **Express 5** |
 | Data | **MongoDB** via **Mongoose** |
 | Auth | **JWT** (access + refresh), **bcrypt** password hashing |
-| Ingestion | **pdf-parse**, **mammoth** (DOCX), **JSZip** + slide XML (PPTX); in-process **worker queue** with retries |
+| Ingestion | **pdf-parse**, **mammoth** (DOCX), **JSZip** + slide XML (PPTX) |
+| Queue/worker | **Redis + BullMQ** (split API/worker modes for production-like architecture) |
 | AI | Optional OpenAI embeddings + grounded generation with safe fallback |
+
+Why these choices:
+
+- **Express + TS**: fast iteration, explicit request validation patterns, simple deployment.
+- **MongoDB**: flexible schema for chat messages + citations and chunk storage; easy user scoping.
+- **BullMQ/Redis**: makes ingestion truly async and scalable beyond a single node process.
+- **OpenAI optionality**: the system works offline (lexical retrieval + fallback), but can upgrade to semantic retrieval + generated grounded answers when configured.
 
 ---
 
@@ -130,6 +149,7 @@ sequenceDiagram
 
 - **Node.js** 20+
 - **MongoDB** 6+ (Atlas or local)
+- **Redis** (for BullMQ queue)
 
 ---
 
@@ -207,6 +227,24 @@ Runs `tsc`. Production entry: **`npm start`** → `node dist/server.js`.
 
 ---
 
+## Setup (deployed)
+
+Minimum production-style deployment has **three** moving parts:
+
+- **API service**: runs HTTP routes (`PROCESSOR_MODE=api`)
+- **Worker service**: runs ingestion worker (`PROCESSOR_MODE=worker`)
+- **Redis + MongoDB**: shared backing services
+
+Deployment checklist:
+
+- Configure **MongoDB** (`MONGO_URI`, `MONGODB_DB_NAME`).
+- Configure **Redis** (`REDIS_URL`).
+- Configure **JWT secrets** (`JWT_SECRET` or `ACCESS_TOKEN_SECRET` + `REFRESH_TOKEN_SECRET`).
+- Set **CORS** origin in `src/app.ts` to your deployed frontend origin.
+- Ensure `uploads/` is **persistent storage** (disk volume) or migrate to object storage if running multiple instances.
+
+---
+
 ## API overview
 
 | Method | Path | Auth | Description |
@@ -234,6 +272,49 @@ Runs `tsc`. Production entry: **`npm start`** → `node dist/server.js`.
 | POST | `/api/chats/:chatId/messages/:messageId/feedback` | Yes | thumbs up/down |
 
 Responses use a consistent envelope: `{ status, message, data, error }`.
+
+---
+
+## Authentication and authorization approach
+
+- **Register** creates a user, hashes password, and issues access+refresh tokens. It also triggers an email verification token.
+- **Login** is **blocked until email is verified** (returns `403`).
+- **Access token**: sent as `Authorization: Bearer <token>`; middleware attaches `req.user.userId`.
+- **Refresh token**: used by the frontend to refresh access on `401`.
+- **Authorization**: every document, chunk, and chat query filters by `userId` (hard multi-tenant isolation).
+
+---
+
+## AI agent design and purpose
+
+The “agent” here is a **grounded document QA assistant**:
+
+- **Purpose**: answer user questions using **only evidence from the user’s uploaded documents** and return **citations**.
+- **Retrieval**: hybrid scoring (lexical overlap + optional cosine similarity if embeddings exist).
+- **Generation**: if `OPENAI_API_KEY` is configured, a short grounded answer is generated from retrieved snippets; otherwise a deterministic fallback response is returned.
+- **Safety**: when no evidence is found, the assistant explicitly says it does not have enough information.
+
+---
+
+## Creative/custom features
+
+- **Message feedback loop**: thumbs up/down persisted per assistant message (`/api/chats/.../feedback`).
+- **Starter question generation**: `/api/chats/suggestions` based on doc names + snippets + prior questions.
+- **Processing transparency**: `/api/documents/processing/health` exposes queue/worker metrics for a better UX.
+
+---
+
+## Key design decisions and trade-offs
+
+- **JSON base64 upload kept** alongside multipart:
+  - **Pro**: easy for API clients
+  - **Con**: higher memory overhead than streaming
+- **BullMQ**:
+  - **Pro**: scalable, split worker from API
+  - **Con**: requires Redis
+- **Optional OpenAI**:
+  - **Pro**: semantic retrieval + better answers when available
+  - **Con**: requires external API + keys; must handle failures gracefully
 
 ---
 
