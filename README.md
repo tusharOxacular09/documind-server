@@ -105,11 +105,11 @@ sequenceDiagram
   participant FS as File Storage
   participant DB as MongoDB
 
-  UI->>API: POST /api/documents/upload/multipart (file)
-  API->>FS: Save file under uploads/<userId>/
-  API->>DB: Create Document (status=uploaded)
+  UI->>API: POST multipart upload
+  API->>FS: Save file under uploads user folder
+  API->>DB: Create Document status uploaded
   API-->>UI: 201 Document created
-  API->>API: enqueueDocumentProcessing(documentId)
+  API->>API: enqueueDocumentProcessing
 ```
 
 ### Processing pipeline
@@ -121,14 +121,14 @@ sequenceDiagram
   participant FS as File Storage
   participant DB as MongoDB
 
-  Q-->>W: Job(documentId)
+  Q-->>W: Job with documentId
   W->>DB: status=processing
   W->>FS: Read uploaded file bytes
-  W->>W: Extract text (pdf/docx/pptx; ppt best-effort)
+  W->>W: Extract pdf docx pptx, ppt best-effort
   W->>W: Chunk text
-  W->>W: Optional embeddings (OPENAI_API_KEY)
-  W->>DB: Upsert DocumentChunk[] (with optional embedding)
-  W->>DB: status=ready (or failed)
+  W->>W: Optional embeddings if OPENAI_API_KEY set
+  W->>DB: Replace DocumentChunk rows and optional embeddings
+  W->>DB: status=ready or failed
 ```
 
 ### Retrieval flow
@@ -150,12 +150,12 @@ sequenceDiagram
   participant API as Chat API
   participant DB as MongoDB
 
-  UI->>API: POST /api/chats/ask (message, chatId?, documentIds?)
-  API->>DB: Validate user + scope docs
-  API->>DB: Retrieve ranked citations (chunks)
-  API->>API: Compose answer (OpenAI if configured; fallback otherwise)
-  API->>DB: Persist user+assistant messages (with citations)
-  API-->>UI: assistantMessage + citations
+  UI->>API: POST chats ask with message and optional scope
+  API->>DB: Validate user and scoped documents
+  API->>DB: Retrieve ranked citations from chunks
+  API->>API: Compose answer via OpenAI or template fallback
+  API->>DB: Persist user and assistant messages with citations
+  API-->>UI: Return assistant payload and citations
 ```
 
 ---
