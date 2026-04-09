@@ -13,9 +13,16 @@ import { HttpError } from "../../utils/http-error";
 type QueueJob = {
   documentId: string;
 };
-const queueName = "document-processing";
+
+const QUEUE_NAME = "documind-document-processing";
+const BULLMQ_PREFIX = "documind";
+
 const redis = new IORedis(env.redisUrl, { maxRetriesPerRequest: null });
-const queue = new Queue<QueueJob>(queueName, { connection: redis });
+
+const queueConnectionOpts = { connection: redis, prefix: BULLMQ_PREFIX };
+
+const queue = new Queue<QueueJob>(QUEUE_NAME, queueConnectionOpts);
+
 let worker: Worker<QueueJob> | null = null;
 let workerStarted = false;
 let processedTotal = 0;
@@ -81,7 +88,7 @@ const processDocument = async (documentId: string): Promise<void> => {
     if (cachedEmb) {
       embedding = cachedEmb;
     } else if (hasOpenAI()) {
-      const created = await createEmbedding(text, { usageFor: "document-processing/chunk" });
+      const created = await createEmbedding(text, { usageFor: "documind-ingestion/chunk" });
       embedding = created ?? undefined;
     }
 
@@ -120,7 +127,7 @@ const startDocumentProcessingWorker = (): void => {
   if (workerStarted) return;
   workerStarted = true;
   worker = new Worker<QueueJob>(
-    queueName,
+    QUEUE_NAME,
     async (job) => {
       inProgress += 1;
       try {
@@ -130,7 +137,7 @@ const startDocumentProcessingWorker = (): void => {
         inProgress -= 1;
       }
     },
-    { connection: redis }
+    queueConnectionOpts
   );
 
   worker.on("failed", async (job) => {
@@ -154,12 +161,12 @@ const getDocumentProcessingStats = async (): Promise<{
 }> => {
   const counts = await queue.getJobCounts("waiting", "active", "delayed");
   return {
-  running: Boolean(workerStarted),
-  queued: (counts.waiting ?? 0) + (counts.delayed ?? 0),
-  inProgress: counts.active ?? inProgress,
-  processedTotal,
-  failedTotal,
-  retriedTotal,
+    running: Boolean(workerStarted),
+    queued: (counts.waiting ?? 0) + (counts.delayed ?? 0),
+    inProgress: counts.active ?? inProgress,
+    processedTotal,
+    failedTotal,
+    retriedTotal,
   };
 };
 

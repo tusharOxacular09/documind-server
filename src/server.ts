@@ -1,7 +1,7 @@
 import { app } from "./app";
 import { connectDatabase } from "./config/database";
 import { env } from "./config/env";
-import { startDocumentProcessingWorker } from "./modules/document/document-processing.queue";
+import { startDocumentProcessingWorker } from "./modules/document/documind-document-processing.queue";
 
 const startServer = async (): Promise<void> => {
   try {

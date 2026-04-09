@@ -7,7 +7,7 @@ import { Types } from "mongoose";
 
 import { HttpError } from "../../utils/http-error";
 import { DocumentChunkModel } from "./document-chunk.model";
-import { enqueueDocumentProcessing } from "./document-processing.queue";
+import { enqueueDocumentProcessing } from "./documind-document-processing.queue";
 import { DocumentModel } from "./document.model";
 import { resolvePathInsideUploads } from "./uploads-path";
 

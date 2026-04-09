@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { createReadStream } from "node:fs";
 
 import { apiResponse } from "../../utils/api-response";
-import { getDocumentProcessingStats } from "./document-processing.queue";
+import { getDocumentProcessingStats } from "./documind-document-processing.queue";
 import { documentService } from "./document.service";
 
 const createDocument = (req: Request, res: Response, next: NextFunction): void => {
