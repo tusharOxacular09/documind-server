@@ -2,7 +2,7 @@
 
 REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents and chats, **async document ingestion** (extract → chunk → persist), and **retrieval-grounded** Q&A with citations. Intended for the Trao Full-Stack AI Engineering assessment.
 
-**Pair with:** [documind-client](../documind-client). This service does not serve the SPA; configure CORS for your frontend origin.
+**Pair with:** the separate **documind-client** repository (Next.js SPA). This API does not serve the frontend; set **`CORS_ORIGINS`** to the client origin and configure the client’s **`NEXT_PUBLIC_API_URL`** here.
 
 ### Live deployment (production)
 
@@ -388,11 +388,10 @@ To deploy your own instance:
 | `npm run dev:worker` | Worker-only process |
 | `npm run build` | `tsc` compile |
 | `npm start` | Production start (see `package.json`) |
-| `npm run test:e2e:smoke` | Curl-based smoke flow (register/upload/ask) |
-| `npm run test:e2e:api` | Node assertion-based API auth/e2e checks |
+| `npm run typecheck` | `tsc --noEmit` (CI/local sanity) |
 
 ---
 
-## Full-system docs
+## Related repository
 
-See the **[repository root README](../README.md)** for end-to-end diagrams, assessment checklist, and narrative (if this repo is part of a monorepo).
+This backend is paired with a separate **frontend** codebase (**DocuMind client**): dashboards, uploads in the browser, chat UI, and `NEXT_PUBLIC_API_URL`. Clone that repo next to this one if you work on both locally; there is **no shared monorepo root README**—each repo carries its own documentation (this file for API/worker/RAG; the client repo README for Next.js and UX).
