@@ -273,7 +273,7 @@ Deployment checklist:
 | POST | `/api/documents` | Yes | Create metadata (optional path) |
 | POST | `/api/documents/upload` | Yes | Upload file (JSON body: base64 + metadata) |
 | POST | `/api/documents/upload/multipart` | Yes | Upload file (`multipart/form-data`, field `file`) |
-| DELETE | `/api/documents/:id` | Yes | Delete document + chunks |
+| DELETE | `/api/documents/:id` | Yes | Delete document row, all its chunks, and the file under `uploads/` (path-jailed) |
 | GET | `/api/chats` | Yes | List chats |
 | GET | `/api/chats/suggestions` | Yes | Starter questions |
 | GET | `/api/chats/:chatId` | Yes | Messages |
@@ -328,8 +328,18 @@ The “agent” here is a **grounded document QA assistant**:
 
 ## Document lifecycle
 
-1. **Upload** — File saved under `uploads/<userId>/`, row `status: uploaded`.
-2. **Worker** — Job dequeued from Redis/BullMQ → `processing` → extract text → chunk → optional per-chunk embeddings (if OpenAI key exists) → replace `DocumentChunk` rows → `ready` or `failed` (with retries).
+1. **Upload** — Multipart or JSON base64: file written to `uploads/<userId>/{documentId}-{sanitizedFileName}`, `storagePath` stored on the document, row `status: uploaded`, then **`enqueueDocumentProcessing`** runs (BullMQ job id = document id, retries with backoff).
+2. **Worker** — Job dequeued → `processing` → read file from `storagePath` → extract text → chunk → optional embeddings when `OPENAI_API_KEY` is set → delete prior chunks for that document → insert new `DocumentChunk` rows → `ready`, or `failed` after retries.
+
+### Deletion (`DELETE /api/documents/:documentId`)
+
+Scoped to the authenticated user:
+
+- Removes the **Document** document from MongoDB.
+- **`deleteMany`** on **DocumentChunk** for that `documentId` (and `userId`).
+- **Unlinks the file** on disk when `storagePath` is set and **`resolvePathInsideUploads`** confirms it stays under the `uploads/` root (traversal-safe).
+
+**Not** cleared by this handler (by design today): **chat transcripts** (old messages can still show citations to the deleted file name/id), **`ChatResponseCache`** rows (an identical question + scope may still hit a cached answer until the cache entry is stale or the query scope changes). Deleting while `status` is **`processing`** can race with the worker (e.g. missing file on read, or rare inconsistency); prefer waiting for `ready` / `failed` before delete in production UX.
 
 ---
 
