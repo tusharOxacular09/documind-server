@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 
+import { env } from "./config/env";
 import { apiRouter } from "./routes";
 import { HttpError } from "./utils/http-error";
 import { apiResponse } from "./utils/api-response";
@@ -10,7 +11,19 @@ import { apiResponse } from "./utils/api-response";
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Non-browser clients (curl, server-to-server) often send no Origin header.
+      if (!origin || env.corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
 app.use(morgan("dev"));
 app.use(express.json({ limit: "25mb" }));
 
@@ -29,6 +42,10 @@ app.use((_req, res) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof Error && error.message === "Not allowed by CORS") {
+    res.status(403).json(apiResponse.error(error.message));
+    return;
+  }
   if (error instanceof HttpError) {
     res.status(error.statusCode).json(apiResponse.error(error.message));
     return;

@@ -8,6 +8,7 @@ import { chunkText } from "./ingestion/document-chunker";
 import { extractDocumentText } from "./ingestion/document-extractor";
 import { createEmbedding } from "../chat/rag/openai-rag.service";
 import { env } from "../../config/env";
+import { HttpError } from "../../utils/http-error";
 
 type QueueJob = {
   documentId: string;
@@ -82,9 +83,18 @@ const processDocument = async (documentId: string): Promise<void> => {
   await markStatus(documentId, "ready");
 };
 
-const enqueueDocumentProcessing = (documentId: string): void => {
+const enqueueDocumentProcessing = async (documentId: string): Promise<void> => {
   if (!Types.ObjectId.isValid(documentId)) return;
-  void queue.add("ingest", { documentId }, { jobId: documentId, attempts: 3, backoff: { type: "fixed", delay: 2000 } });
+  try {
+    await queue.add(
+      "ingest",
+      { documentId },
+      { jobId: documentId, attempts: 3, backoff: { type: "fixed", delay: 2000 } }
+    );
+  } catch (err) {
+    console.error("Failed to enqueue job:", err);
+    throw new HttpError("Document processing queue unavailable", 503);
+  }
 };
 
 const startDocumentProcessingWorker = (): void => {
@@ -94,15 +104,17 @@ const startDocumentProcessingWorker = (): void => {
     queueName,
     async (job) => {
       inProgress += 1;
-      await processDocument(job.data.documentId);
-      processedTotal += 1;
-      inProgress = Math.max(0, inProgress - 1);
+      try {
+        await processDocument(job.data.documentId);
+        processedTotal += 1;
+      } finally {
+        inProgress -= 1;
+      }
     },
     { connection: redis }
   );
 
   worker.on("failed", async (job) => {
-    inProgress = Math.max(0, inProgress - 1);
     if (!job) return;
     if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
       await markStatus(job.data.documentId, "failed");

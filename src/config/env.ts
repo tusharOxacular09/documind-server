@@ -38,4 +38,9 @@ export const env = {
   smtpUser: process.env.SMTP_USER ?? "",
   smtpPass: process.env.SMTP_PASS ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "noreply@documind.local",
+  /** Comma-separated list of allowed browser origins for CORS (e.g. http://localhost:3000,https://app.example.com). */
+  corsOrigins: (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 };

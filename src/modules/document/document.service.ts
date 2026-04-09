@@ -1,5 +1,6 @@
 /// <reference types="multer" />
 
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Types } from "mongoose";
@@ -8,6 +9,7 @@ import { HttpError } from "../../utils/http-error";
 import { DocumentChunkModel } from "./document-chunk.model";
 import { enqueueDocumentProcessing } from "./document-processing.queue";
 import { DocumentModel } from "./document.model";
+import { resolvePathInsideUploads } from "./uploads-path";
 
 type CreateDocumentInput = {
   name: string;
@@ -17,6 +19,12 @@ type CreateDocumentInput = {
 
 type UploadDocumentInput = CreateDocumentInput & {
   contentBase64: string;
+};
+
+export type DocumentFileDownload = {
+  absolutePath: string;
+  contentType: string;
+  contentDisposition: string;
 };
 
 type DocumentDto = {
@@ -117,7 +125,7 @@ const createDocument = async (userId: string, payload: unknown): Promise<{ docum
     status: "uploaded",
   });
 
-  enqueueDocumentProcessing(doc._id.toString());
+  await enqueueDocumentProcessing(doc._id.toString());
 
   return { document: toDocumentDto(doc) };
 };
@@ -160,9 +168,56 @@ const persistUploadedBuffer = async (
   doc.storagePath = filePath;
   await doc.save();
 
-  enqueueDocumentProcessing(doc._id.toString());
+  await enqueueDocumentProcessing(doc._id.toString());
 
   return { document: toDocumentDto(doc) };
+};
+
+const contentTypeForExt = (ext: string): string => {
+  if (ext === ".pdf") return "application/pdf";
+  if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (ext === ".ppt") return "application/vnd.ms-powerpoint";
+  return "application/octet-stream";
+};
+
+/** Resolve document file on disk for download; enforces uploads-directory jail on storagePath. */
+const getDocumentFileDownload = async (userId: string, documentId: string): Promise<DocumentFileDownload> => {
+  const ownerId = ensureUserId(userId);
+  if (!Types.ObjectId.isValid(documentId)) {
+    throw new HttpError("Invalid document identifier", 400);
+  }
+
+  const doc = await DocumentModel.findOne({ _id: documentId, userId: ownerId })
+    .select("_id name type storagePath userId")
+    .lean();
+
+  if (!doc) {
+    throw new HttpError("Document not found", 404);
+  }
+
+  if (!doc.storagePath) {
+    throw new HttpError("File not available", 404);
+  }
+
+  const absolutePath = resolvePathInsideUploads(doc.storagePath);
+  if (!absolutePath) {
+    throw new HttpError("Invalid file path", 403);
+  }
+
+  if (!existsSync(absolutePath)) {
+    throw new HttpError("File missing on disk", 404);
+  }
+
+  const ext = path.extname(doc.name).toLowerCase();
+  const contentType = contentTypeForExt(ext);
+  const safeName = doc.name.replace(/[\r\n"]/g, "_");
+  const contentDisposition =
+    ext === ".pdf"
+      ? `inline; filename="${safeName}"`
+      : `attachment; filename="${safeName}"`;
+
+  return { absolutePath, contentType, contentDisposition };
 };
 
 const createUploadedDocument = async (userId: string, payload: unknown): Promise<{ document: DocumentDto }> => {
@@ -220,7 +275,10 @@ const deleteDocument = async (userId: string, documentId: string): Promise<void>
 
   await DocumentChunkModel.deleteMany({ documentId: new Types.ObjectId(documentId), userId: ownerId });
   if (deleted.storagePath) {
-    await rm(deleted.storagePath, { force: true });
+    const trustedPath = resolvePathInsideUploads(deleted.storagePath);
+    if (trustedPath) {
+      await rm(trustedPath, { force: true });
+    }
   }
 };
 
@@ -228,6 +286,7 @@ export const documentService = {
   createDocument,
   createUploadedDocument,
   createUploadedDocumentMultipart,
+  getDocumentFileDownload,
   listDocuments,
   deleteDocument,
 };

@@ -9,6 +9,7 @@ import { HttpError } from "../../utils/http-error";
 import { ChatModel } from "../chat/chat.model";
 import { DocumentChunkModel } from "../document/document-chunk.model";
 import { DocumentModel } from "../document/document.model";
+import { resolvePathInsideUploads } from "../document/uploads-path";
 import { UserModel } from "../user/user.model";
 import { env } from "../../config/env";
 import { emailService } from "./email.service";
@@ -384,7 +385,10 @@ const deleteAccount = async (userId: string, payload: unknown): Promise<{ delete
   const docs = await DocumentModel.find({ userId: ownerId }).select("storagePath").lean();
   for (const doc of docs) {
     if (doc.storagePath) {
-      await rm(doc.storagePath, { force: true });
+      const trustedPath = resolvePathInsideUploads(doc.storagePath);
+      if (trustedPath) {
+        await rm(trustedPath, { force: true });
+      }
     }
   }
 
