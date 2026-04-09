@@ -4,6 +4,15 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 
 **Pair with:** [documind-client](../documind-client). This service does not serve the SPA; configure CORS for your frontend origin.
 
+### Live deployment (production)
+
+| | URL |
+|--|-----|
+| **API** | [https://api.documind.enrolbee.com/](https://api.documind.enrolbee.com/) |
+| **Web app** | [https://documind.enrolbee.com/](https://documind.enrolbee.com/) |
+
+The API root returns a JSON health-style payload. Ensure **`CORS_ORIGINS`** on the server includes **`https://documind.enrolbee.com`** (no trailing slash). The frontend should set **`NEXT_PUBLIC_API_URL=https://api.documind.enrolbee.com`** (no trailing slash).
+
 ---
 
 ## Project overview
