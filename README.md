@@ -11,6 +11,12 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 | **API** | [https://api.documind.enrolbee.com/](https://api.documind.enrolbee.com/) |
 | **Web app** | [https://documind.enrolbee.com/](https://documind.enrolbee.com/) |
 
+**Hosting (production):**
+
+- **AWS:** Next.js frontend, Express API, BullMQ **worker**, **Redis** (job backend), and file upload storage.
+- **MongoDB Atlas:** Managed database for users, documents, chunks, and chats (`MONGODB_URI` points at your Atlas cluster).
+- **Asynchronous processing:** **BullMQ** queues on top of **Redis** — the API enqueues ingestion jobs; the worker consumes them so uploads are not processed on the HTTP thread.
+
 The API root returns a JSON health-style payload. Ensure **`CORS_ORIGINS`** on the server includes **`https://documind.enrolbee.com`** (no trailing slash). The frontend should set **`NEXT_PUBLIC_API_URL=https://api.documind.enrolbee.com`** (no trailing slash).
 
 ---
@@ -53,9 +59,9 @@ Why these choices:
 flowchart LR
   U[User] -->|UI actions| FE[Next.js Client]
   FE -->|JWT API calls| API[Express API]
-  API --> DB[(MongoDB)]
+  API --> DB[(MongoDB Atlas)]
   API --> FS[(uploads/<userId>/ file storage)]
-  API --> Q[(Redis/BullMQ Queue)]
+  API --> Q[(Redis · BullMQ)]
   W[Worker Process] -->|dequeue| Q
   W -->|extract/chunk/embed| DB
   W -->|read file| FS
@@ -234,16 +240,18 @@ Runs `tsc`. Production entry: **`npm start`** → `node dist/server.js`.
 
 ## Setup (deployed)
 
+**DocuMind production** uses **AWS** for app/worker/Redis/storage and **MongoDB Atlas** for the database (see [Live deployment (production)](#live-deployment-production)). The checklist below applies to that environment and to any self-hosted copy of the architecture.
+
 Minimum production-style deployment has **three** moving parts:
 
 - **API service**: runs HTTP routes (`PROCESSOR_MODE=api`)
-- **Worker service**: runs ingestion worker (`PROCESSOR_MODE=worker`)
-- **Redis + MongoDB**: shared backing services
+- **Worker service**: runs the **BullMQ** ingestion worker (`PROCESSOR_MODE=worker`)
+- **MongoDB Atlas** + **Redis**: Atlas for persistence; Redis as the BullMQ broker/backing store for the document-processing queue
 
 Deployment checklist:
 
-- Configure **MongoDB** (`MONGODB_URI`, `MONGODB_DB_NAME`).
-- Configure **Redis** (`REDIS_URL`).
+- Configure **MongoDB Atlas** (`MONGODB_URI`, `MONGODB_DB_NAME`) — cluster connection string from Atlas.
+- Configure **Redis** (`REDIS_URL`) for **BullMQ** (same Redis URL for API enqueue and worker).
 - Configure **`ACCESS_TOKEN_SECRET`** and **`REFRESH_TOKEN_SECRET`** (different values).
 - Set **`CORS_ORIGINS`** to your deployed frontend origin.
 - Ensure `uploads/` is **persistent storage** (disk volume) or migrate to object storage if running multiple instances.
@@ -335,9 +343,13 @@ The “agent” here is a **grounded document QA assistant**:
 
 ## Deploying
 
-1. Provision **MongoDB** (`MONGODB_URI`, `MONGODB_DB_NAME`).
+For the **public DocuMind instance**, the frontend and API/worker run on **AWS**, with **MongoDB Atlas** and **Redis** for **BullMQ** (see live URLs at the top of this README).
+
+To deploy your own instance:
+
+1. Provision **MongoDB Atlas** (or another MongoDB deployment) and set `MONGODB_URI` / `MONGODB_DB_NAME`.
 2. Set strong, distinct **`ACCESS_TOKEN_SECRET`** and **`REFRESH_TOKEN_SECRET`** and token expiries.
-3. Run API and worker as separate processes/containers against the same Redis for distributed processing.
+3. Run **Redis** and point **`REDIS_URL`** at it; run API and worker as separate processes so both use the **same** Redis for **BullMQ**.
 4. Set **`CORS_ORIGINS`** so only your deployed Next.js origin can call the API.
 5. Persist **`uploads/`** on disk or migrate to object storage for multi-instance setups.
 
