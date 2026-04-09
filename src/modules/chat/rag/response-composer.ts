@@ -1,4 +1,4 @@
-import type { CitationDto } from "./retrieval.service";
+import type { CitationDto } from "./rag-types";
 import { generateGroundedAnswer, hasOpenAI } from "./openai-rag.service";
 import { MAX_CHUNK_CHARS_FOR_PROMPT, MAX_CHUNKS_FOR_LLM } from "./rag-constants";
 

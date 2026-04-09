@@ -1,6 +1,6 @@
 import { env } from "../../../config/env";
-import type { CitationDto } from "./retrieval.service";
 import { MAX_CHUNKS_FOR_LLM } from "./rag-constants";
+import type { CitationDto } from "./rag-types";
 
 const OPENAI_API = "https://api.openai.com/v1";
 /** Chat completions: fixed to cheapest model per product requirement. */
