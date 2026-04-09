@@ -19,6 +19,25 @@ REST API for **DocuMind**: **JWT authentication**, **user-isolated** documents a
 
 ---
 
+## High-Level Architecture (Backend)
+
+```mermaid
+flowchart LR
+  U[User] -->|UI actions| FE[Next.js Client]
+  FE -->|JWT API calls| API[Express API]
+  API --> DB[(MongoDB)]
+  API --> FS[(uploads/<userId>/ file storage)]
+  API --> Q[(Redis/BullMQ Queue)]
+  W[Worker Process] -->|dequeue| Q
+  W -->|extract/chunk/embed| DB
+  W -->|read file| FS
+  API --> RAG[Retrieval + Answer Composer]
+  RAG --> DB
+  API --> FE
+```
+
+---
+
 ## Architecture (modules)
 
 ```
@@ -38,6 +57,72 @@ uploads/                 # Per-user file storage: uploads/<userId>/...
 
 - **Isolation:** Every query scopes by `userId` from the verified access token.
 - **RAG (current):** Hybrid retrieval (lexical + optional embedding similarity). If `OPENAI_API_KEY` is not set, it automatically falls back to lexical-only ranking and template responses.
+
+---
+
+## End-to-End Backend Flow (User request → Answer)
+
+### Document ingestion flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Client
+  participant API as Express API
+  participant FS as File Storage
+  participant DB as MongoDB
+
+  UI->>API: POST /api/documents/upload/multipart (file)
+  API->>FS: Save file under uploads/<userId>/
+  API->>DB: Create Document (status=uploaded)
+  API-->>UI: 201 Document created
+  API->>API: enqueueDocumentProcessing(documentId)
+```
+
+### Processing pipeline
+
+```mermaid
+sequenceDiagram
+  participant Q as Redis/BullMQ
+  participant W as Worker
+  participant FS as File Storage
+  participant DB as MongoDB
+
+  Q-->>W: Job(documentId)
+  W->>DB: status=processing
+  W->>FS: Read uploaded file bytes
+  W->>W: Extract text (pdf/docx/pptx; ppt best-effort)
+  W->>W: Chunk text
+  W->>W: Optional embeddings (OPENAI_API_KEY)
+  W->>DB: Upsert DocumentChunk[] (with optional embedding)
+  W->>DB: status=ready (or failed)
+```
+
+### Retrieval flow
+
+```mermaid
+flowchart TD
+  Q[User question] --> S[Scope docs: selected IDs or full library]
+  S --> D[Load ready documents]
+  D --> C[Load candidate chunks]
+  C --> Rank[Rank chunks: lexical + optional cosine similarity]
+  Rank --> Cite[Pick top citations + snippets]
+```
+
+### Chat interaction flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Client
+  participant API as Chat API
+  participant DB as MongoDB
+
+  UI->>API: POST /api/chats/ask (message, chatId?, documentIds?)
+  API->>DB: Validate user + scope docs
+  API->>DB: Retrieve ranked citations (chunks)
+  API->>API: Compose answer (OpenAI if configured; fallback otherwise)
+  API->>DB: Persist user+assistant messages (with citations)
+  API-->>UI: assistantMessage + citations
+```
 
 ---
 
@@ -79,6 +164,18 @@ SMTP_USER=
 SMTP_PASS=
 EMAIL_FROM=noreply@documind.local
 ```
+
+#### What each env var does (backend-oriented)
+
+- **`MONGO_URI` / `MONGODB_DB_NAME`**: persists users, documents, chunks, chats (the system of record).
+- **`JWT_SECRET` / `ACCESS_TOKEN_SECRET` / `REFRESH_TOKEN_SECRET`**: signs tokens so every request can be scoped to `userId`.
+- **`REDIS_URL`**: queue backend for ingestion jobs (API enqueues; worker dequeues).
+- **`PROCESSOR_MODE`**:
+  - `all`: API + worker in one process (easy local dev)
+  - `api`: only serve HTTP routes
+  - `worker`: only run BullMQ worker loop
+- **`OPENAI_*`**: optional embeddings + grounded generation. When unset, the app still works (lexical retrieval + fallback answers).
+- **`APP_BASE_URL` + SMTP vars**: used to deliver verification/reset links by email (falls back to logging if SMTP is not configured).
 
 Production: restrict **`cors()`** in `src/app.ts` to your Next.js origin instead of open CORS if you expose this API publicly.
 
