@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { HttpError } from "../../utils/http-error";
 import { DocumentChunkModel } from "../document/document-chunk.model";
 import { DocumentModel } from "../document/document.model";
+import { ChatResponseCacheModel } from "./chat-response-cache.model";
 import { ChatModel } from "./chat.model";
 import { composeGroundedAssistantReply } from "./rag/response-composer";
 import { retrieveRankedCitations, type CitationDto } from "./rag/retrieval.service";
@@ -62,6 +63,20 @@ const inferTitle = (question: string): string => {
   const clean = question.trim().replace(/\s+/g, " ");
   return clean.length <= 60 ? clean : `${clean.slice(0, 57)}...`;
 };
+
+const normalizeQueryKey = (message: string): string => message.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 2000);
+
+const scopeKeyFromDocumentIds = (documentIds: string[]): string =>
+  documentIds.length === 0 ? "__all__" : [...new Set(documentIds)].sort().join("|");
+
+const citationsFromCache = (
+  rows: { documentId?: Types.ObjectId; documentName: string; snippet: string }[]
+): CitationDto[] =>
+  rows.map((c) => ({
+    documentId: c.documentId?.toString(),
+    documentName: c.documentName,
+    snippet: c.snippet,
+  }));
 
 const parseAskPayload = (
   payload: unknown
@@ -180,9 +195,35 @@ const askQuestion = async (userId: string, payload: unknown): Promise<{
   }
 
   const selectedDocumentIds = (documentIds ?? []).filter((id) => Types.ObjectId.isValid(id));
+  const queryKey = normalizeQueryKey(message);
+  const scopeKey = scopeKeyFromDocumentIds(selectedDocumentIds);
 
-  const citations = await retrieveRankedCitations(ownerId, message, selectedDocumentIds);
-  const assistantContent = await composeGroundedAssistantReply(message, citations);
+  const cached = await ChatResponseCacheModel.findOne({ userId: ownerId, queryKey, scopeKey }).lean();
+
+  let citations: CitationDto[];
+  let assistantContent: string;
+
+  if (cached) {
+    citations = citationsFromCache(cached.citations);
+    assistantContent = cached.assistantContent;
+  } else {
+    citations = await retrieveRankedCitations(ownerId, message, selectedDocumentIds);
+    assistantContent = await composeGroundedAssistantReply(message, citations);
+    await ChatResponseCacheModel.findOneAndUpdate(
+      { userId: ownerId, queryKey, scopeKey },
+      {
+        $set: {
+          assistantContent,
+          citations: citations.map((c) => ({
+            documentId: c.documentId ? new Types.ObjectId(c.documentId) : undefined,
+            documentName: c.documentName,
+            snippet: c.snippet,
+          })),
+        },
+      },
+      { upsert: true }
+    );
+  }
 
   if (!chat) {
     chat = await ChatModel.create({

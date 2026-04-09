@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 
 import { DocumentChunkModel } from "../../document/document-chunk.model";
 import { DocumentModel } from "../../document/document.model";
-import { createEmbedding } from "./openai-rag.service";
+import { MAX_CHUNKS_FOR_LLM, MAX_CHUNKS_TO_RANK } from "./rag-constants";
 
 export type CitationDto = {
   documentId?: string;
@@ -20,22 +20,11 @@ const tokenize = (text: string): Set<string> =>
   );
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const cosineSimilarity = (a: number[], b: number[]): number => {
-  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
-  let dot = 0;
-  let aNorm = 0;
-  let bNorm = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i] * b[i];
-    aNorm += a[i] * a[i];
-    bNorm += b[i] * b[i];
-  }
-  if (aNorm === 0 || bNorm === 0) return 0;
-  return dot / (Math.sqrt(aNorm) * Math.sqrt(bNorm));
-};
+
+const SNIPPET_DISPLAY_CHARS = 220;
 
 /**
- * Multi-step retrieval: scope to user → load ready documents → fetch chunks → rank by lexical overlap → fuse by document.
+ * Lexical-only retrieval (no OpenAI on the chat path) — keeps one completion budget free for generateGroundedAnswer.
  */
 const retrieveRankedCitations = async (
   ownerId: Types.ObjectId,
@@ -50,61 +39,47 @@ const retrieveRankedCitations = async (
   const readyDocIds = readyDocs.map((doc) => doc._id);
 
   const chunkFilter = readyDocIds.length ? { userId: ownerId, documentId: { $in: readyDocIds } } : { userId: ownerId };
-  const candidateChunks = await DocumentChunkModel.find(chunkFilter).select("content documentId embedding").lean();
+  const candidateChunks = await DocumentChunkModel.find(chunkFilter)
+    .select("content documentId")
+    .limit(MAX_CHUNKS_TO_RANK)
+    .lean();
 
   const queryTokens = tokenize(message);
-  const queryEmbedding = await createEmbedding(message);
-  const rankedChunks = candidateChunks
-    .map((chunk) => ({
-      chunk,
-      score: (() => {
-        const lexical = [...tokenize(chunk.content)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0);
-        if (!queryEmbedding || !Array.isArray(chunk.embedding) || chunk.embedding.length === 0) return lexical;
-        const semantic = cosineSimilarity(queryEmbedding, chunk.embedding);
-        return lexical + semantic * 4;
-      })(),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
-
   const docMap = new Map(readyDocs.map((doc) => [doc._id.toString(), doc]));
-  const grouped = new Map<string, { score: number; snippet: string }>();
-  for (const item of rankedChunks) {
-    const docId = item.chunk.documentId.toString();
-    const existing = grouped.get(docId);
-    const snippet = item.chunk.content.slice(0, 180);
-    if (!existing || item.score > existing.score) {
-      grouped.set(docId, { score: item.score, snippet });
-    }
-  }
 
-  const citationScores: { score: number; citation: CitationDto }[] = [];
-  for (const [docId, data] of grouped.entries()) {
-    const doc = docMap.get(docId);
+  const ranked = candidateChunks
+    .map((chunk) => {
+      const lexical = [...tokenize(chunk.content)].reduce((acc, token) => (queryTokens.has(token) ? acc + 1 : acc), 0);
+      return { chunk, score: lexical };
+    })
+    .filter((item) => item.score > 0 || queryTokens.size === 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_CHUNKS_FOR_LLM);
+
+  const citations: CitationDto[] = [];
+  for (const item of ranked) {
+    const doc = docMap.get(item.chunk.documentId.toString());
     if (!doc) continue;
-    citationScores.push({
-      score: data.score,
-      citation: {
-        documentId: docId,
-        documentName: doc.name,
-        snippet: data.snippet,
-      },
-    });
-  }
+    const raw = item.chunk.content.trim();
+    const snippet =
+      raw.length > SNIPPET_DISPLAY_CHARS ? `${raw.slice(0, SNIPPET_DISPLAY_CHARS)}…` : raw;
 
-  return citationScores
-    .sort((a, b) => b.score - a.score || a.citation.documentName.localeCompare(b.citation.documentName))
-    .map((entry) => entry.citation)
-    .filter((_, idx) => idx < 2)
-    .slice(0, 2)
-    .filter((citation, idx) => {
-      if (queryTokens.size === 0) return idx === 0;
+    if (queryTokens.size > 0) {
       const tokenRegex = new RegExp(
         [...queryTokens].map((token) => `\\b${escapeRegExp(token)}\\b`).join("|"),
         "i"
       );
-      return tokenRegex.test(citation.snippet) || idx === 0;
+      if (!tokenRegex.test(snippet) && citations.length > 0) continue;
+    }
+
+    citations.push({
+      documentId: doc._id.toString(),
+      documentName: doc.name,
+      snippet,
     });
+  }
+
+  return citations.slice(0, MAX_CHUNKS_FOR_LLM);
 };
 
 export { retrieveRankedCitations };

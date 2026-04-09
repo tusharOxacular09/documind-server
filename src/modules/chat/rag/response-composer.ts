@@ -1,25 +1,52 @@
 import type { CitationDto } from "./retrieval.service";
-import { generateGroundedAnswer } from "./openai-rag.service";
+import { generateGroundedAnswer, hasOpenAI } from "./openai-rag.service";
+import { MAX_CHUNK_CHARS_FOR_PROMPT, MAX_CHUNKS_FOR_LLM } from "./rag-constants";
 
-const composeGroundedAssistantReply = async (userQuestion: string, citations: CitationDto[]): Promise<string> => {
-  const generated = await generateGroundedAnswer(userQuestion, citations);
-  if (generated) return generated;
+const truncateForPrompt = (snippet: string): string =>
+  snippet.length > MAX_CHUNK_CHARS_FOR_PROMPT
+    ? `${snippet.slice(0, MAX_CHUNK_CHARS_FOR_PROMPT)}…`
+    : snippet;
 
-  if (citations.length > 0) {
+const fallbackFromChunks = (question: string, citations: CitationDto[]): string => {
+  if (citations.length === 0) {
     return [
-      "Here is a grounded answer based on retrieved passages from your documents (see sources below).",
+      "I don't have enough information in your uploaded documents to answer that confidently.",
       "",
-      `Your question: "${userQuestion}"`,
-      "",
-      "I matched relevant chunks, ranked them by overlap with your query, and synthesized this response only from that evidence. If you need more detail, ask a follow-up or narrow document selection.",
+      "Try uploading more relevant files or wait until documents finish processing (Ready).",
     ].join("\n");
   }
 
+  const lines = citations.slice(0, MAX_CHUNKS_FOR_LLM).map((c, i) => {
+    const s = truncateForPrompt(c.snippet);
+    return `${i + 1}. **${c.documentName}**: ${s}`;
+  });
+
   return [
-    "I don't have enough information in your uploaded documents to answer that confidently.",
+    "Based on available document content, here are the closest matching passages to your question.",
     "",
-    "Try uploading more relevant files, wait until documents finish processing (Ready), or turn on Search all in chat to consider your full library.",
+    `Your question: "${question}"`,
+    "",
+    ...lines,
+    "",
+    "Configure OPENAI_API_KEY for a synthesized summary; otherwise answers use retrieval only.",
   ].join("\n");
+};
+
+/**
+ * At most one OpenAI call (chat completion) when the API key is set; otherwise template from chunks only.
+ */
+const composeGroundedAssistantReply = async (userQuestion: string, citations: CitationDto[]): Promise<string> => {
+  const forLlm = citations.slice(0, MAX_CHUNKS_FOR_LLM).map((c) => ({
+    ...c,
+    snippet: truncateForPrompt(c.snippet),
+  }));
+
+  if (hasOpenAI() && forLlm.length > 0) {
+    const generated = await generateGroundedAnswer(userQuestion, forLlm, { usageFor: "chat/ask" });
+    if (generated) return generated;
+  }
+
+  return fallbackFromChunks(userQuestion, citations);
 };
 
 export { composeGroundedAssistantReply };

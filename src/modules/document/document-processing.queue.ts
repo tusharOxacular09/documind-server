@@ -6,7 +6,7 @@ import { DocumentChunkModel } from "./document-chunk.model";
 import { DocumentModel } from "./document.model";
 import { chunkText } from "./ingestion/document-chunker";
 import { extractDocumentText } from "./ingestion/document-extractor";
-import { createEmbedding } from "../chat/rag/openai-rag.service";
+import { createEmbedding, hasOpenAI } from "../chat/rag/openai-rag.service";
 import { env } from "../../config/env";
 import { HttpError } from "../../utils/http-error";
 
@@ -57,6 +57,16 @@ const processDocument = async (documentId: string): Promise<void> => {
   });
   await wait(300);
 
+  const existingChunks = await DocumentChunkModel.find({ documentId: doc._id })
+    .select("index content embedding")
+    .lean();
+  const reuseByIndex = new Map<string, number[]>();
+  for (const row of existingChunks) {
+    if (Array.isArray(row.embedding) && row.embedding.length > 0) {
+      reuseByIndex.set(`${row.index}::${row.content}`, row.embedding);
+    }
+  }
+
   const chunks: {
     userId: Types.ObjectId;
     documentId: Types.ObjectId;
@@ -65,13 +75,22 @@ const processDocument = async (documentId: string): Promise<void> => {
     embedding?: number[];
   }[] = [];
   for (let i = 0; i < contentChunks.length; i += 1) {
-    const embedding = await createEmbedding(contentChunks[i]);
+    const text = contentChunks[i];
+    const cachedEmb = reuseByIndex.get(`${i}::${text}`);
+    let embedding: number[] | undefined;
+    if (cachedEmb) {
+      embedding = cachedEmb;
+    } else if (hasOpenAI()) {
+      const created = await createEmbedding(text, { usageFor: "document-processing/chunk" });
+      embedding = created ?? undefined;
+    }
+
     chunks.push({
       userId: doc.userId,
       documentId: doc._id,
       index: i,
-      content: contentChunks[i],
-      embedding: embedding ?? undefined,
+      content: text,
+      embedding,
     });
   }
 
