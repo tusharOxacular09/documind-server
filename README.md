@@ -177,12 +177,7 @@ OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 REDIS_URL=redis://127.0.0.1:6379
 PROCESSOR_MODE=all
-APP_BASE_URL=http://localhost:3000
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
-EMAIL_FROM=noreply@documind.local
+CORS_ORIGINS=http://localhost:3000
 ```
 
 #### What each env var does (backend-oriented)
@@ -195,9 +190,9 @@ EMAIL_FROM=noreply@documind.local
   - `api`: only serve HTTP routes
   - `worker`: only run BullMQ worker loop
 - **`OPENAI_*`**: optional embeddings + grounded generation. When unset, the app still works (lexical retrieval + fallback answers).
-- **`APP_BASE_URL` + SMTP vars**: used to deliver verification/reset links by email (falls back to logging if SMTP is not configured).
+- **`CORS_ORIGINS`**: comma-separated allowed browser origins (see `src/app.ts`).
 
-Production: restrict **`cors()`** in `src/app.ts` to your Next.js origin instead of open CORS if you expose this API publicly.
+Production: set **`CORS_ORIGINS`** to your deployed Next.js origin when you expose this API publicly.
 
 ### 3. Run (development)
 
@@ -252,10 +247,6 @@ Deployment checklist:
 | POST | `/api/auth/register` | No | Sign up |
 | POST | `/api/auth/login` | No | Sign in |
 | POST | `/api/auth/refresh` | No | New access token |
-| POST | `/api/auth/verification/request` | No | Request email verification link (logged in server) |
-| POST | `/api/auth/verification/confirm` | No | Verify email using token |
-| POST | `/api/auth/password/forgot` | No | Request password reset link (logged in server) |
-| POST | `/api/auth/password/reset` | No | Reset password with token |
 | GET | `/api/auth/me` | Yes | Current user |
 | PUT | `/api/auth/profile` | Yes | Update name/email |
 | POST | `/api/auth/account/delete` | Yes | Delete account (`password` in JSON body) |
@@ -277,8 +268,7 @@ Responses use a consistent envelope: `{ status, message, data, error }`.
 
 ## Authentication and authorization approach
 
-- **Register** creates a user, hashes password, and issues access+refresh tokens. It also triggers an email verification token.
-- **Login** is **blocked until email is verified** (returns `403`).
+- **Register** creates a user, hashes password, and issues access+refresh tokens.
 - **Access token**: sent as `Authorization: Bearer <token>`; middleware attaches `req.user.userId`.
 - **Refresh token**: used by the frontend to refresh access on `401`.
 - **Authorization**: every document, chunk, and chat query filters by `userId` (hard multi-tenant isolation).
@@ -348,6 +338,12 @@ The “agent” here is a **grounded document QA assistant**:
 - **.ppt** (legacy binary) uses a best-effort `soffice` conversion path when LibreOffice is available; otherwise it falls back to heuristic extraction.
 - Embeddings and generated answers require `OPENAI_API_KEY`; without it, lexical retrieval + deterministic fallback responses are used.
 - **Multipart** upload is available on `POST /api/documents/upload/multipart`; JSON base64 upload remains for API clients that prefer it.
+
+---
+
+## Improvements (future)
+
+- **Email verification**: optional SMTP-backed flow to verify new users before login, if product requirements change.
 
 ---
 

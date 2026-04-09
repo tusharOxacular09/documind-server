@@ -21,16 +21,11 @@ const register = await api("/api/auth/register", {
 assert.equal(register.res.status, 201, "register should succeed");
 assert.equal(register.json.status, "success");
 
-const loginBlocked = await api("/api/auth/login", {
+const login = await api("/api/auth/login", {
   method: "POST",
   body: JSON.stringify({ email, password }),
 });
-assert.equal(loginBlocked.res.status, 403, "login should be blocked before verification");
+assert.equal(login.res.status, 200, "login should succeed after register");
+assert.equal(login.json.status, "success");
 
-const verifyReq = await api("/api/auth/verification/request", {
-  method: "POST",
-  body: JSON.stringify({ email }),
-});
-assert.equal(verifyReq.res.status, 200);
-
-console.log("E2E API checks passed (register + verification gate + verification request).");
+console.log("E2E API checks passed (register + login).");

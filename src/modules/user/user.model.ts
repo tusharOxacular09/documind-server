@@ -25,7 +25,7 @@ const userSchema = new Schema<User, UserModelType>(
       match: [/^\S+@\S+\.\S+$/, "Invalid email format"],
     },
     password: { type: String, required: true, minlength: 6 },
-    emailVerified: { type: Boolean, required: true, default: false },
+    emailVerified: { type: Boolean, required: true, default: true },
     emailVerificationTokenHash: { type: String, required: false },
     emailVerificationExpiresAt: { type: Date, required: false },
     passwordResetTokenHash: { type: String, required: false },

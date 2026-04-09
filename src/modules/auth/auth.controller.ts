@@ -73,51 +73,11 @@ const deleteAccount = (req: Request, res: Response, next: NextFunction): void =>
     .catch(next);
 };
 
-const requestEmailVerification = (req: Request, res: Response, next: NextFunction): void => {
-  authService
-    .requestEmailVerification(req.body)
-    .then((result) => {
-      res.status(200).json(apiResponse.success("Verification email requested", result));
-    })
-    .catch(next);
-};
-
-const confirmEmailVerification = (req: Request, res: Response, next: NextFunction): void => {
-  authService
-    .confirmEmailVerification(req.body)
-    .then((result) => {
-      res.status(200).json(apiResponse.success("Email verified successfully", result));
-    })
-    .catch(next);
-};
-
-const forgotPassword = (req: Request, res: Response, next: NextFunction): void => {
-  authService
-    .requestPasswordReset(req.body)
-    .then((result) => {
-      res.status(200).json(apiResponse.success("Password reset requested", result));
-    })
-    .catch(next);
-};
-
-const resetPassword = (req: Request, res: Response, next: NextFunction): void => {
-  authService
-    .resetPassword(req.body)
-    .then((result) => {
-      res.status(200).json(apiResponse.success("Password reset successful", result));
-    })
-    .catch(next);
-};
-
 export {
-  confirmEmailVerification,
   deleteAccount,
-  forgotPassword,
   login,
   me,
   refresh,
   register,
-  requestEmailVerification,
-  resetPassword,
   updateProfile,
 };
