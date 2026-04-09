@@ -3,6 +3,7 @@ import { Router } from "express";
 import { authenticate } from "../../middlewares/authenticate";
 import {
   createDocument,
+  getDocumentFile,
   listDocuments,
   processingHealth,
   removeDocument,
@@ -19,6 +20,7 @@ documentRouter.post("/", createDocument);
 documentRouter.post("/upload/multipart", handleMultipartFile, uploadDocumentMultipart);
 documentRouter.post("/upload", uploadDocument);
 documentRouter.get("/", listDocuments);
+documentRouter.get("/:documentId/file", getDocumentFile);
 documentRouter.delete("/:documentId", removeDocument);
 
 export { documentRouter };
