@@ -53,13 +53,20 @@ const retrieveRankedCitations = async (
       return { chunk, score: lexical };
     })
     .filter((item) => item.score > 0 || queryTokens.size === 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_CHUNKS_FOR_LLM);
+    .sort((a, b) => b.score - a.score);
 
+  // One citation per document (best-scoring chunk) so the UI does not list the same PDF twice.
   const citations: CitationDto[] = [];
+  const seenDocumentIds = new Set<string>();
   for (const item of ranked) {
-    const doc = docMap.get(item.chunk.documentId.toString());
+    if (citations.length >= MAX_CHUNKS_FOR_LLM) break;
+
+    const docId = item.chunk.documentId.toString();
+    if (seenDocumentIds.has(docId)) continue;
+
+    const doc = docMap.get(docId);
     if (!doc) continue;
+
     const raw = item.chunk.content.trim();
     const snippet =
       raw.length > SNIPPET_DISPLAY_CHARS ? `${raw.slice(0, SNIPPET_DISPLAY_CHARS)}…` : raw;
@@ -72,6 +79,7 @@ const retrieveRankedCitations = async (
       if (!tokenRegex.test(snippet) && citations.length > 0) continue;
     }
 
+    seenDocumentIds.add(docId);
     citations.push({
       documentId: doc._id.toString(),
       documentName: doc.name,
@@ -79,7 +87,7 @@ const retrieveRankedCitations = async (
     });
   }
 
-  return citations.slice(0, MAX_CHUNKS_FOR_LLM);
+  return citations;
 };
 
 export { retrieveRankedCitations };
