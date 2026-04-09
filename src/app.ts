@@ -53,7 +53,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
   const message = error instanceof Error ? error.message : "Internal server error";
   res.status(500).json(
-    apiResponse.error("Internal server error", process.env.NODE_ENV === "development" ? { message } : {})
+    apiResponse.error("Internal server error", env.nodeEnv === "development" ? { message } : {})
   );
 });
 

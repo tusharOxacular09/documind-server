@@ -167,9 +167,10 @@ Create **`.env`** in this directory:
 
 ```env
 PORT=5000
-MONGO_URI=mongodb://localhost:27017
+MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=documind
-JWT_SECRET=change-me-to-a-long-random-string
+ACCESS_TOKEN_SECRET=change-me-access-secret-long-random
+REFRESH_TOKEN_SECRET=change-me-refresh-secret-different-long-random
 ACCESS_TOKEN_EXPIRY=15m
 REFRESH_TOKEN_EXPIRY=7d
 OPENAI_API_KEY=
@@ -182,8 +183,8 @@ CORS_ORIGINS=http://localhost:3000
 
 #### What each env var does (backend-oriented)
 
-- **`MONGO_URI` / `MONGODB_DB_NAME`**: persists users, documents, chunks, chats (the system of record).
-- **`JWT_SECRET` / `ACCESS_TOKEN_SECRET` / `REFRESH_TOKEN_SECRET`**: signs tokens so every request can be scoped to `userId`.
+- **`MONGODB_URI` / `MONGODB_DB_NAME`**: required; persists users, documents, chunks, chats (the system of record).
+- **`ACCESS_TOKEN_SECRET` / `REFRESH_TOKEN_SECRET`**: required, **must differ**; signs access vs refresh tokens (`JWT_SECRET` is not used).
 - **`REDIS_URL`**: queue backend for ingestion jobs (API enqueues; worker dequeues).
 - **`PROCESSOR_MODE`**:
   - `all`: API + worker in one process (easy local dev)
@@ -232,10 +233,10 @@ Minimum production-style deployment has **three** moving parts:
 
 Deployment checklist:
 
-- Configure **MongoDB** (`MONGO_URI`, `MONGODB_DB_NAME`).
+- Configure **MongoDB** (`MONGODB_URI`, `MONGODB_DB_NAME`).
 - Configure **Redis** (`REDIS_URL`).
-- Configure **JWT secrets** (`JWT_SECRET` or `ACCESS_TOKEN_SECRET` + `REFRESH_TOKEN_SECRET`).
-- Set **CORS** origin in `src/app.ts` to your deployed frontend origin.
+- Configure **`ACCESS_TOKEN_SECRET`** and **`REFRESH_TOKEN_SECRET`** (different values).
+- Set **`CORS_ORIGINS`** to your deployed frontend origin.
 - Ensure `uploads/` is **persistent storage** (disk volume) or migrate to object storage if running multiple instances.
 
 ---
@@ -325,10 +326,10 @@ The “agent” here is a **grounded document QA assistant**:
 
 ## Deploying
 
-1. Provision **MongoDB** (URI in `MONGO_URI`).
-2. Set strong **`JWT_SECRET`** and token expiries.
+1. Provision **MongoDB** (`MONGODB_URI`, `MONGODB_DB_NAME`).
+2. Set strong, distinct **`ACCESS_TOKEN_SECRET`** and **`REFRESH_TOKEN_SECRET`** and token expiries.
 3. Run API and worker as separate processes/containers against the same Redis for distributed processing.
-4. Update CORS in `app.ts` so only your deployed Next.js origin can call the API.
+4. Set **`CORS_ORIGINS`** so only your deployed Next.js origin can call the API.
 5. Persist **`uploads/`** on disk or migrate to object storage for multi-instance setups.
 
 ---

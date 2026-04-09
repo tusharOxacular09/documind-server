@@ -2,27 +2,33 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const mongoUri = process.env.MONGO_URI ?? process.env.MONGODB_URI ?? "";
-const accessTokenSecret =
-  process.env.ACCESS_TOKEN_SECRET ?? process.env.JWT_SECRET ?? "";
-const refreshTokenSecret =
-  process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_SECRET ?? accessTokenSecret;
+const mongoUri = process.env.MONGODB_URI?.trim() ?? "";
+const mongodbDbName = process.env.MONGODB_DB_NAME?.trim() ?? "";
+
+const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET?.trim() ?? "";
+const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET?.trim() ?? "";
 
 if (!mongoUri) {
-  throw new Error("Missing required environment variable: MONGO_URI (or MONGODB_URI)");
+  throw new Error("Missing required environment variable: MONGODB_URI");
+}
+
+if (!mongodbDbName) {
+  throw new Error("Missing required environment variable: MONGODB_DB_NAME");
 }
 
 if (!accessTokenSecret || !refreshTokenSecret) {
-  throw new Error(
-    "Missing JWT secrets: set JWT_SECRET or both ACCESS_TOKEN_SECRET and REFRESH_TOKEN_SECRET"
-  );
+  throw new Error("Missing required secrets: ACCESS_TOKEN_SECRET and REFRESH_TOKEN_SECRET");
+}
+
+if (accessTokenSecret === refreshTokenSecret) {
+  throw new Error("ACCESS_TOKEN_SECRET and REFRESH_TOKEN_SECRET must be different values");
 }
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 5000),
   mongoUri,
-  mongodbDbName: process.env.MONGODB_DB_NAME ?? "documind",
+  mongodbDbName,
   accessTokenSecret,
   refreshTokenSecret,
   accessTokenExpiry: process.env.ACCESS_TOKEN_EXPIRY ?? "15m",
