@@ -7,6 +7,8 @@ const mongodbDbName = process.env.MONGODB_DB_NAME?.trim() ?? "";
 
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET?.trim() ?? "";
 const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET?.trim() ?? "";
+const parsedUploadMaxMb = Number(process.env.UPLOAD_MAX_MB ?? 30);
+const uploadMaxMb = Number.isFinite(parsedUploadMaxMb) && parsedUploadMaxMb > 0 ? parsedUploadMaxMb : 30;
 
 if (!mongoUri) {
   throw new Error("Missing required environment variable: MONGODB_URI");
@@ -25,6 +27,8 @@ if (accessTokenSecret === refreshTokenSecret) {
 }
 
 export const env = {
+  uploadMaxMb,
+  uploadMaxBytes: uploadMaxMb * 1024 * 1024,
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 5000),
   mongoUri,

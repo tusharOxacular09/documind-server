@@ -194,6 +194,7 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 REDIS_URL=redis://127.0.0.1:6379
 PROCESSOR_MODE=all
 CORS_ORIGINS=http://localhost:3000
+UPLOAD_MAX_MB=30
 ```
 
 #### What each env var does (backend-oriented)
@@ -201,6 +202,7 @@ CORS_ORIGINS=http://localhost:3000
 - **`MONGODB_URI` / `MONGODB_DB_NAME`**: required; persists users, documents, chunks, chats (the system of record).
 - **`ACCESS_TOKEN_SECRET` / `REFRESH_TOKEN_SECRET`**: required, **must differ**; signs access vs refresh tokens (`JWT_SECRET` is not used).
 - **`REDIS_URL`**: queue backend for ingestion jobs (API enqueues; worker dequeues).
+- **`UPLOAD_MAX_MB`**: max accepted upload size for both multipart and base64 upload routes (defaults to `30`).
 - **`PROCESSOR_MODE`**:
   - `all`: API + worker in one process (easy local dev)
   - `api`: only serve HTTP routes

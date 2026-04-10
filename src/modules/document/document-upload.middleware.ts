@@ -1,9 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
+import { env } from "../../config/env";
 import { apiResponse } from "../../utils/api-response";
 
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = env.uploadMaxBytes;
 
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -17,7 +18,7 @@ const handleMultipartFile = (req: Request, res: Response, next: NextFunction): v
     if (err) {
       const multerErr = err as { code?: string };
       if (multerErr?.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json(apiResponse.error("File exceeds 10MB upload limit"));
+        res.status(413).json(apiResponse.error(`File exceeds ${env.uploadMaxMb}MB upload limit`));
         return;
       }
       if (multerErr?.code === "LIMIT_UNEXPECTED_FILE") {

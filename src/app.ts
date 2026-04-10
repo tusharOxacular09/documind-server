@@ -9,6 +9,7 @@ import { HttpError } from "./utils/http-error";
 import { apiResponse } from "./utils/api-response";
 
 const app = express();
+const jsonLimitMb = Math.max(2, Math.ceil(env.uploadMaxMb * 1.5));
 
 app.use(helmet());
 app.use(
@@ -25,7 +26,7 @@ app.use(
   })
 );
 app.use(morgan("dev"));
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: `${jsonLimitMb}mb` }));
 
 app.get("/", (_req, res) => {
   res.status(200).json(apiResponse.success("Backend is running", { service: "documind-server" }));

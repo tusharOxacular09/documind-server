@@ -5,6 +5,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Types } from "mongoose";
 
+import { env } from "../../config/env";
 import { HttpError } from "../../utils/http-error";
 import { DocumentChunkModel } from "./document-chunk.model";
 import { enqueueDocumentProcessing } from "./documind-document-processing.queue";
@@ -38,7 +39,7 @@ type DocumentDto = {
 };
 
 const ALLOWED_TYPES = new Set(["pdf", "docx", "ppt", "pptx"]);
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = env.uploadMaxBytes;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -83,7 +84,7 @@ const parseUploadInput = (payload: unknown): UploadDocumentInput => {
     throw new HttpError("File content is required", 400);
   }
   if (base.sizeBytes > MAX_UPLOAD_BYTES) {
-    throw new HttpError("File exceeds 10MB upload limit", 413);
+    throw new HttpError(`File exceeds ${env.uploadMaxMb}MB upload limit`, 413);
   }
 
   return { ...base, contentBase64 };
@@ -145,7 +146,7 @@ const persistUploadedBuffer = async (
     throw new HttpError("Invalid file content", 400);
   }
   if (meta.sizeBytes > MAX_UPLOAD_BYTES) {
-    throw new HttpError("File exceeds 10MB upload limit", 413);
+    throw new HttpError(`File exceeds ${env.uploadMaxMb}MB upload limit`, 413);
   }
   if (Math.abs(fileBuffer.length - meta.sizeBytes) > 2048) {
     throw new HttpError("Uploaded file size does not match metadata", 400);
@@ -245,7 +246,7 @@ const createUploadedDocumentMultipart = async (
     throw new HttpError("Invalid file content", 400);
   }
   if (sizeBytes > MAX_UPLOAD_BYTES) {
-    throw new HttpError("File exceeds 10MB upload limit", 413);
+    throw new HttpError(`File exceeds ${env.uploadMaxMb}MB upload limit`, 413);
   }
   return persistUploadedBuffer(ownerId, { name, type, sizeBytes }, fileBuffer);
 };
